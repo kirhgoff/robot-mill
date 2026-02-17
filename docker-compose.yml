@@ -1,0 +1,15 @@
+services:
+  robot-runner:
+    build: .
+    environment:
+      TASK_DIR: /data/tasks
+      WORKSPACES_DIR: /data/workspaces
+      ROBOT_ID: runner-1
+      SLEEP_MS: "2000"
+      # For MVP: provide commands that read JSON on stdin and output JSON on stdout.
+      # Replace with your agent integration.
+      ROBOT_PLAN_COMMAND: "node -e \"process.stdin.setEncoding('utf8');let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const i=JSON.parse(s);process.stdout.write(JSON.stringify({kind:'ready',planMarkdown:'- plan stub'}));});\""
+      ROBOT_IMPLEMENT_COMMAND: "node -e \"process.stdin.setEncoding('utf8');let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{process.stdout.write(JSON.stringify({notesMarkdown:'- implementation stub'}));});\""
+    volumes:
+      - ./tasks:/data/tasks
+      - ./workspaces:/data/workspaces

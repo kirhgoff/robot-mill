@@ -1,0 +1,18 @@
+{
+  "name": "@robot/tasksource-markdown",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "task-md": "./src/cli.ts"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "scripts": {
+    "build": "bunx tsc -p ../../tsconfig.json --noEmit",
+    "test": "bun test"
+  }
+}

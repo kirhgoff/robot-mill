@@ -1,0 +1,22 @@
+{
+  "name": "robot-runner",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "fmt": "bunx prettier -w .",
+    "lint": "bunx eslint .",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+    "build": "bun run -r build",
+    "test": "bun run -r test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "@types/js-yaml": "^4.0.9",
+    "eslint": "^9.19.0",
+    "prettier": "^3.5.1",
+    "typescript": "^5.7.3"
+  }
+}

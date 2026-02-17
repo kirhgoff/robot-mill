@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@robot/core": ["packages/core/src/index.ts"],
+      "@robot/tasksource-markdown": ["packages/tasksource-markdown/src/index.ts"],
+      "@robot/robot-local": ["packages/robot-local/src/index.ts"],
+      "@robot/git": ["packages/git/src/index.ts"]
+    }
+  },
+  "include": ["packages/**/*", "apps/**/*"]
+}

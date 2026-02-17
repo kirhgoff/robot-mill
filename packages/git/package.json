@@ -1,0 +1,12 @@
+{
+  "name": "@robot/git",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "bunx tsc -p ../../tsconfig.json --noEmit",
+    "test": "bun test"
+  }
+}
