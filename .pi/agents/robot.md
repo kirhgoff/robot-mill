@@ -76,6 +76,7 @@ This will commit, push, and assign the task to the human buddy for review.
 1. **Check the push output** for a GitHub PR creation link (usually shows "Create a pull request for 'branch-name' on GitHub by visiting: https://...")
 2. **Inform the human** about the PR creation link and provide a summary of changes
 3. If no link is provided, inform them that the branch `robot/<task-id>` is ready for PR creation
+4. Assign the task back to the human buddy
 
 **Example message to human:**
 ```
