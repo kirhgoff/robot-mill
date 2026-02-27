@@ -1,0 +1,13 @@
+{
+  "taskSource": "markdown",
+  "tasksDir": "./tasks",
+  "reposDir": "./repos",
+  "branchPrefix": "robot/",
+  "defaultMainBranch": "master",
+
+  "jira": {
+    "host": "your-company.atlassian.net",
+    "project": "PROJ",
+    "email": "robot@example.com"
+  }
+}
