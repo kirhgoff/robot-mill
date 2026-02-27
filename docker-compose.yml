@@ -1,0 +1,61 @@
+# Robot Mill - Docker Compose Configuration
+#
+# Usage:
+#   docker compose up robot          # Run robot in autonomous mode
+#   docker compose run robot --task task-001  # Work on specific task
+#   docker compose up -d robot       # Run in background
+#
+# Environment:
+#   Create a .env file with your API keys:
+#     ANTHROPIC_API_KEY=sk-ant-...
+#     OPENAI_API_KEY=sk-...  (optional)
+#     JIRA_HOST=...          (optional)
+#     JIRA_API_TOKEN=...     (optional)
+
+services:
+  robot:
+    build: .
+    image: robot-mill:latest
+    container_name: robot-mill
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ROBOT_PROVIDER=${ROBOT_PROVIDER:-anthropic}
+      - ROBOT_MODEL=${ROBOT_MODEL:-claude-sonnet-4-20250514}
+      # Jira configuration (optional)
+      - JIRA_HOST=${JIRA_HOST:-}
+      - JIRA_EMAIL=${JIRA_EMAIL:-}
+      - JIRA_API_TOKEN=${JIRA_API_TOKEN:-}
+      - JIRA_PROJECT=${JIRA_PROJECT:-}
+    volumes:
+      # Task files - markdown task source
+      - ./tasks:/app/tasks
+      # Git worktrees for parallel task execution
+      - ./worktrees:/app/.worktrees
+      # Repository cache (clone repos here)
+      - ./repos:/app/repos
+      # SSH keys for git operations (optional)
+      - ${HOME}/.ssh:/root/.ssh:ro
+      # Git credentials (optional)
+      - ${HOME}/.gitconfig:/root/.gitconfig:ro
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  # Optional: Web UI for task management (placeholder)
+  # Uncomment and implement if needed
+  # web:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.web
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - ./tasks:/app/tasks
+  #   environment:
+  #     - PORT=3000
+
+volumes:
+  tasks:
+  worktrees:
+  repos:

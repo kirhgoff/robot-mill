@@ -1,0 +1,20 @@
+{
+  "name": "robot-mill",
+  "version": "0.1.0",
+  "description": "Autonomous task-processing robot workflow system",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "task": "bun run src/cli.ts",
+    "robot": "bun run src/robot.ts",
+    "build": "bun build src/cli.ts --outdir dist --target node",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.32.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}
