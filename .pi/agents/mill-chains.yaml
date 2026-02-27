@@ -1,0 +1,222 @@
+# Robot Mill — Workflow Chains
+#
+# These chains define agent pipelines for different workflow transitions.
+# Each chain is triggered by a specific workflow state change.
+#
+# Variables:
+#   $INPUT   = Output from previous step (or user input for step 1)
+#   $ORIGINAL = Original task description (preserved across all steps)
+#
+# ═══════════════════════════════════════════════════════════════════════════════
+# WORKFLOW TRANSITIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │  TASK STATES                                                                │
+# │                                                                             │
+# │  todo ──────────────────┬──────────────────────────────► in_progress        │
+# │                         │                                     │             │
+# │                    [full-mill]                                │             │
+# │                    [quick-mill]                               │             │
+# │                                                               │             │
+# │  ┌──────────────────────────────────────────────────────────┬─┘             │
+# │  │                                                          │               │
+# │  │  ┌─────────────┐                                         │               │
+# │  │  │             │ [clarify]                               │               │
+# │  │  ▼             │                                         │               │
+# │  │  needs_info ───┘                                         │               │
+# │  │       │                                                  │               │
+# │  │       │ [resume-from-clarify]                            │               │
+# │  │       │ (human answered)                                 │               │
+# │  │       ▼                                                  │               │
+# │  │  in_progress ◄───────────────────────────────────────────┘               │
+# │  │       │                                                                  │
+# │  │       │ [test-review]                                                    │
+# │  │       │ [double-review]                                                  │
+# │  │       ▼                                                                  │
+# │  │  in_review                                                               │
+# │  │       │                                                                  │
+# │  │       ├──────────────────┐                                               │
+# │  │       │                  │                                               │
+# │  │       │ (approved)       │ (changes requested)                           │
+# │  │       │                  │ [resume-from-review]                          │
+# │  │       ▼                  ▼                                               │
+# │  │     done            in_progress                                          │
+# │  │                                                                          │
+# │  └──────────────────────────────────────────────────────────────────────────┘
+# │                                                                             │
+# └─────────────────────────────────────────────────────────────────────────────┘
+#
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────────────────
+# INITIAL TASK PROCESSING
+# Transition: todo → in_progress
+# ───────────────────────────────────────────────────────────────────────────────
+
+full-mill:
+  description: "Complete workflow — understand, plan, build, test, review"
+  # Use when: Starting a new task that needs thorough analysis
+  # Transition: todo → in_progress → in_review
+  steps:
+    - agent: understand
+      prompt: "Analyze this task and the codebase:\n\n$INPUT"
+    - agent: planner
+      prompt: "Create an implementation plan based on this analysis:\n\n$INPUT\n\nOriginal task: $ORIGINAL"
+    - agent: builder
+      prompt: "Implement according to this plan:\n\n$INPUT\n\nOriginal task: $ORIGINAL"
+    - agent: tester
+      prompt: "Write tests and verify this implementation:\n\n$INPUT\n\nOriginal task: $ORIGINAL"
+    - agent: reviewer
+      prompt: "Review these changes for quality and correctness:\n\n$INPUT\n\nOriginal task: $ORIGINAL"
+
+quick-mill:
+  description: "Fast implementation — understand, plan, build (no test/review)"
+  # Use when: Simple task, time-sensitive, or prototype
+  # Transition: todo → in_progress
+  steps:
+    - agent: understand
+      prompt: "Quickly analyze this task:\n\n$INPUT"
+    - agent: planner
+      prompt: "Create a focused plan:\n\n$INPUT"
+    - agent: builder
+      prompt: "Implement this plan:\n\n$INPUT"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# CLARIFICATION WORKFLOWS
+# Transition: in_progress → needs_info (waiting for human)
+# ───────────────────────────────────────────────────────────────────────────────
+
+clarify:
+  description: "Analyze and identify what needs clarification"
+  # Use when: Requirements are unclear or ambiguous
+  # Transition: in_progress → needs_info
+  steps:
+    - agent: understand
+      prompt: "Analyze this task thoroughly:\n\n$INPUT"
+    - agent: clarifier
+      prompt: "Based on this analysis, identify what needs clarification:\n\n$INPUT\n\nOriginal task: $ORIGINAL"
+
+deep-clarify:
+  description: "Triple-pass clarification — thorough requirement analysis"
+  # Use when: Complex task with many unknowns
+  # Transition: in_progress → needs_info
+  steps:
+    - agent: understand
+      prompt: "Analyze this task and codebase:\n\n$INPUT"
+    - agent: clarifier
+      prompt: "Identify ambiguities and questions:\n\n$INPUT"
+    - agent: clarifier
+      prompt: "Review these questions. Remove any that can be answered from the code. Prioritize and refine:\n\n$INPUT\n\nOriginal task: $ORIGINAL"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# RESUME WORKFLOWS
+# Transition: needs_info → in_progress (after human input)
+# ───────────────────────────────────────────────────────────────────────────────
+
+resume-from-clarify:
+  description: "Resume after human answered questions"
+  # Use when: Human has provided answers to clarifying questions
+  # Transition: needs_info → in_progress → in_review
+  steps:
+    - agent: understand
+      prompt: "The human has provided answers. Re-analyze with this new info:\n\n$INPUT"
+    - agent: planner
+      prompt: "Create plan with clarified requirements:\n\n$INPUT"
+    - agent: builder
+      prompt: "Implement the plan:\n\n$INPUT"
+    - agent: tester
+      prompt: "Test the implementation:\n\n$INPUT"
+
+resume-from-plan:
+  description: "Resume after human approved plan"
+  # Use when: Human has reviewed and approved the implementation plan
+  # Transition: needs_info → in_progress → in_review
+  steps:
+    - agent: builder
+      prompt: "The human has approved this plan. Implement it:\n\n$INPUT"
+    - agent: tester
+      prompt: "Test the implementation:\n\n$INPUT"
+    - agent: reviewer
+      prompt: "Final review:\n\n$INPUT"
+
+resume-from-review:
+  description: "Resume after human review feedback"
+  # Use when: Human requested changes during code review
+  # Transition: in_review → in_progress → in_review
+  steps:
+    - agent: builder
+      prompt: "Address this review feedback:\n\n$INPUT"
+    - agent: tester
+      prompt: "Re-test after changes:\n\n$INPUT"
+    - agent: reviewer
+      prompt: "Verify fixes address the feedback:\n\n$INPUT"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# REVIEW WORKFLOWS  
+# Transition: in_progress → in_review
+# ───────────────────────────────────────────────────────────────────────────────
+
+test-review:
+  description: "Test and review existing changes"
+  # Use when: Implementation done, need QA pass
+  # Transition: in_progress → in_review
+  steps:
+    - agent: tester
+      prompt: "Run tests and check coverage for:\n\n$INPUT"
+    - agent: reviewer
+      prompt: "Review based on test results:\n\n$INPUT"
+
+double-review:
+  description: "Two-pass review — thorough quality check"
+  # Use when: Critical changes need extra scrutiny
+  # Transition: in_progress → in_review
+  steps:
+    - agent: reviewer
+      prompt: "First-pass review focusing on bugs and logic:\n\n$INPUT"
+    - agent: reviewer
+      prompt: "Second-pass review. Check for anything missed and verify:\n\n$INPUT\n\nOriginal: $ORIGINAL"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# PLANNING WORKFLOWS
+# No state transition — stays in current state
+# ───────────────────────────────────────────────────────────────────────────────
+
+plan-only:
+  description: "Just plan — understand and create detailed plan"
+  # Use when: Need a plan before committing to implementation
+  # No transition — outputs plan for review
+  steps:
+    - agent: understand
+      prompt: "Analyze this task:\n\n$INPUT"
+    - agent: planner
+      prompt: "Create a detailed plan:\n\n$INPUT"
+
+iterative-plan:
+  description: "Plan with review — plan, critique, refine"
+  # Use when: Complex task needs refined planning
+  # No transition — outputs refined plan for review
+  steps:
+    - agent: understand
+      prompt: "Analyze this task:\n\n$INPUT"
+    - agent: planner
+      prompt: "Create initial plan:\n\n$INPUT"
+    - agent: reviewer
+      prompt: "Critique this plan. Find gaps and issues:\n\n$INPUT"
+    - agent: planner
+      prompt: "Revise plan based on critique:\n\n$INPUT\n\nOriginal task: $ORIGINAL"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# BUILD-ONLY WORKFLOWS
+# Use within in_progress state
+# ───────────────────────────────────────────────────────────────────────────────
+
+build-test:
+  description: "Build and test — skip planning phase"
+  # Use when: Plan already exists, just need implementation
+  # Transition: in_progress (continues)
+  steps:
+    - agent: builder
+      prompt: "Implement this task directly:\n\n$INPUT"
+    - agent: tester
+      prompt: "Test this implementation:\n\n$INPUT"
