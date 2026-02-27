@@ -994,12 +994,15 @@ ${worktrees.map(w => `  - ${w.branch}${w.taskId ? ` (${w.taskId})` : ""}`).join(
             await git(`commit -m "feat(${task.id}): ${task.title}"`, cwd);
           }
 
-          // Push
+          // Push and capture output
           const branch = await git("rev-parse --abbrev-ref HEAD", cwd);
+          let pushOutput = "";
           try {
-            await git(`push -u origin ${branch}`, cwd);
-          } catch {
-            // Might fail if no remote, that's ok
+            const { stderr } = await execAsync(`git push -u origin ${branch}`, { cwd });
+            pushOutput = stderr; // Git push messages go to stderr
+          } catch (err: any) {
+            // Might fail if no remote, capture the error output
+            pushOutput = err.stderr || err.message || "";
           }
 
           // Update task status
@@ -1015,17 +1018,27 @@ ${worktrees.map(w => `  - ${w.branch}${w.taskId ? ` (${w.taskId})` : ""}`).join(
 
           state.currentTaskId = null;
 
+          // Extract PR creation link from push output
+          let prMessage = "";
+          const prLinkMatch = pushOutput.match(/Create a pull request for '[^']+' on GitHub by visiting:\s*(https:\/\/[^\s]+)/);
+          if (prLinkMatch) {
+            prMessage = `\n🔗 **PR Creation Link:** ${prLinkMatch[1]}`;
+          }
+
           return {
             content: [{ type: "text", text: `
 ✓ Task ${task.id} submitted for review!
 
 **Branch:** ${branch}
-**Assigned to:** ${task.humanBuddy}
+**Assigned to:** ${task.humanBuddy}${prMessage}
 
 The task is now in "in_review" status. Your human buddy will review the changes.
 
+${prMessage ? "Use the PR link above to create a pull request, or inform your buddy about the available branch." : `Inform your buddy that branch "${branch}" is ready for PR creation.`}
+
 Use \`workflow next\` to pick up another task.
 ` }],
+            details: { task, branch, prLink: prLinkMatch?.[1] },
           };
         }
       }
