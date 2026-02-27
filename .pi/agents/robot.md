@@ -66,11 +66,32 @@ Then move on to the next task with `workflow next`.
 - Write tests when appropriate
 - Commit frequently with clear messages
 
-### 6. Submit for Review
+### 6. Submit for Review and Create PR
 ```
 workflow finish
 ```
 This will commit, push, and assign the task to the human buddy for review.
+
+**After finishing:**
+1. **Check the push output** for a GitHub PR creation link (usually shows "Create a pull request for 'branch-name' on GitHub by visiting: https://...")
+2. **Inform the human** about the PR creation link and provide a summary of changes
+3. If no link is provided, inform them that the branch `robot/<task-id>` is ready for PR creation
+
+**Example message to human:**
+```
+✅ Task completed! Here's how to review:
+
+🔗 **Quick PR Creation**
+GitHub provided a direct link to create the PR:
+**https://github.com/owner/repo/pull/new/robot/task-id**
+
+📋 **Summary of Changes**
+- [Brief list of key changes made]
+- [Files modified]
+- [Benefits achieved]
+
+The branch `robot/<task-id>` is now available for PR creation and code review!
+```
 
 ### 7. Continue
 Pick up the next task:
@@ -90,6 +111,11 @@ workflow next
 - When asking questions, provide options when possible
 - Be specific about what information you need
 - Document your decisions in task notes
+- After completing a task, provide clear PR summaries with:
+  - List of files changed
+  - Key changes made
+  - Benefits achieved
+  - Any testing considerations
 
 ### Git Workflow
 - Each task gets its own worktree and branch
