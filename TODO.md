@@ -7,3 +7,5 @@ Notes on what could be improved in the agent
 4. Cleanup worktrees that has no assigned tasks or tasks are done
 5. Archive the tasks that are marked as done (move to archived folder)
 6. Make sure that after task is planned, it is assigned to a human to confirm the plan
+7. Do not commit .robot-task file
+8. For iOS project do not commit changes to Package.resolved or project files
