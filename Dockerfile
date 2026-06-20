@@ -1,64 +1,37 @@
-# Robot Mill - Autonomous Task Processing Agent
-#
-# Build:
-#   docker build -t robot-mill .
-#
-# Run:
-#   docker run -it \
-#     -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-#     -v $(pwd)/tasks:/app/tasks \
-#     -v $(pwd)/repos:/app/repos \
-#     robot-mill
+FROM ubuntu:24.04
 
-FROM oven/bun:1-debian AS base
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    ca-certificates \
-    gnupg \
-    && rm -rf /var/lib/apt/lists/*
+# ── Layer 1: System install scripts (rarely change) ───────────────────────────
+COPY install/ /opt/install/
+RUN chmod +x /opt/install/*.sh \
+    && /opt/install/00-base.sh \
+    && /opt/install/10-node.sh \
+    && /opt/install/11-bun.sh \
+    && /opt/install/20-mise.sh \
+    && /opt/install/30-github.sh \
+    && /opt/install/40-user-setup.sh \
+    && /opt/install/50-entrypoint.sh \
+    && rm -rf /opt/install
 
-# Install Node.js (for pi/Claude Code compatibility)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
+# ── Layer 2: Backend ──────────────────────────────────────────────────────────
+COPY --chown=agent:agent robot-fastify-backend/package.json robot-fastify-backend/bun.lock* /home/agent/backend/
+RUN cd /home/agent/backend && bun install --production
+COPY --chown=agent:agent robot-fastify-backend/src/ /home/agent/backend/src/
+COPY --chown=agent:agent robot-fastify-backend/tsconfig.json /home/agent/backend/
 
-# Install pi (Claude Code CLI)
-# Note: Replace with actual installation method
-RUN npm install -g @anthropic-ai/claude-code || true
+# ── Layer 3: Telegram frontend ────────────────────────────────────────────────
+COPY --chown=agent:agent telegram-frontend/package.json telegram-frontend/bun.lock* /home/agent/telegram-frontend/
+RUN cd /home/agent/telegram-frontend && bun install --production
+COPY --chown=agent:agent telegram-frontend/src/ /home/agent/telegram-frontend/src/
+COPY --chown=agent:agent telegram-frontend/tsconfig.json /home/agent/telegram-frontend/
 
-WORKDIR /app
+# ── Layer 4: Session storage directory ────────────────────────────────────────
+RUN mkdir -p /data/agent-sessions && chown agent:agent /data/agent-sessions
 
-# Copy package files
-COPY package.json bun.lockb* ./
+USER agent
+WORKDIR /workspace
 
-# Install dependencies
-RUN bun install
-
-# Copy source code
-COPY . .
-
-# Make scripts executable
-RUN chmod +x run-robot.sh task-cli.sh
-
-# Git config for robot
-RUN git config --global user.name "Robot" \
-    && git config --global user.email "robot@robot-mill.local" \
-    && git config --global init.defaultBranch main
-
-# Create directories
-RUN mkdir -p tasks .worktrees repos
-
-# Default environment
-ENV ROBOT_PROVIDER=anthropic
-ENV ROBOT_MODEL=claude-sonnet-4-20250514
-
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD test -d /app/tasks || exit 1
-
-# Run robot in autonomous mode by default
-ENTRYPOINT ["./run-robot.sh"]
-CMD ["--auto"]
+ENTRYPOINT ["/home/agent/entrypoint.sh"]
+CMD ["/bin/bash"]

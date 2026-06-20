@@ -1,319 +1,160 @@
-# Robot Mill 🤖
+# Pi Agent Docker — Telegram Bridge
 
-An autonomous task-processing workflow system powered by AI agents. Robots pick up tasks, plan implementations, write code, and submit for human review.
-
-## How It Works
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        ROBOT WORKFLOW                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐  │
-│   │  TODO   │ ──► │ PLANNING│ ──► │IMPLEMENT│ ──► │ REVIEW  │  │
-│   └─────────┘     └─────────┘     └─────────┘     └─────────┘  │
-│        │               │               │               │        │
-│        │               │               │               │        │
-│        ▼               ▼               ▼               ▼        │
-│   Robot picks    Robot reads     Robot codes    Human reviews   │
-│   up task        & plans         in worktree    & approves      │
-│                       │                               │         │
-│                       ▼                               ▼         │
-│                 ┌───────────┐                   ┌─────────┐     │
-│                 │NEEDS INFO │ ◄──────────────── │  DONE   │     │
-│                 └───────────┘                   └─────────┘     │
-│                       │                                         │
-│                       ▼                                         │
-│                 Human answers                                   │
-│                 question                                        │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Features
-
-- **Pluggable Task Sources**: Markdown files (MVP), Jira (included), extensible
-- **Parallel Execution**: Git worktrees enable working on multiple tasks simultaneously
-- **Human-in-the-Loop**: Questions, plan approval, and code review
-- **LLM Agnostic**: Supports Claude, GPT-4, and other providers
-- **Docker Ready**: Run anywhere with a single container
-
-## Quick Start
-
-### 1. Install Dependencies
-
-```bash
-bun install
-```
-
-### 2. Configure API Key
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-# or
-export OPENAI_API_KEY=sk-...
-```
-
-### 3. Create a Task
-
-```bash
-./task-cli.sh create
-# Follow the prompts to create a task
-```
-
-Or create a markdown file in `tasks/`:
-
-```markdown
----
-id: task-001
-title: Implement user authentication
-status: todo
-humanBuddy: kirill
-repository: https://github.com/example/repo
-branch: null
-assignee: null
-priority: 1
-labels: [backend, auth]
-createdAt: 2025-01-15T10:00:00Z
-updatedAt: 2025-01-15T10:00:00Z
----
-
-## Description
-
-Add a login endpoint that validates credentials and returns a JWT.
-
-## Notes
-
-```
-
-### 4. Run the Robot
-
-```bash
-# Interactive mode
-./run-robot.sh
-
-# Autonomous mode (keeps picking tasks)
-./run-robot.sh --auto
-
-# Work on specific task
-./run-robot.sh --task task-001
-```
-
-### 5. Review & Approve
-
-```bash
-# List tasks needing review
-./task-cli.sh list in_review
-
-# Approve a task
-./task-cli.sh approve task-001
-
-# Or request changes
-./task-cli.sh reject task-001 "Please add input validation"
-```
+Runs the [pi coding agent](https://github.com/badlogic/pi-mono) in a container
+and exposes it via a Telegram bot. Send prompts from anywhere on your Tailscale
+network; pi does the work inside the container.
 
 ## Architecture
 
 ```
-robot-mill/
-├── .pi/
-│   ├── agents/
-│   │   └── robot.md           # Agent persona & instructions
-│   └── extensions/
-│       └── robot-mill.ts      # Pi extension with all tools
-├── src/
-│   ├── types.ts               # Core types & interfaces
-│   ├── sources/
-│   │   ├── index.ts           # Task source factory
-│   │   ├── markdown-source.ts # Markdown file implementation
-│   │   └── jira-source.ts     # Jira API implementation
-│   └── git/
-│       └── worktree-manager.ts # Git worktree operations
-├── tasks/                      # Task markdown files
-├── .worktrees/                 # Git worktrees (one per task)
-├── run-robot.sh               # Run the robot agent
-├── task-cli.sh                # Task management CLI
-├── Dockerfile                 # Docker container
-├── docker-compose.yml         # Docker Compose config
-└── justfile                   # Just commands
+Telegram ──► bot.js ──► pi --mode rpc (JSONL over stdin/stdout) ──► your repos
 ```
 
-## Task Source Interface
+`bot.js` spawns `pi` in **RPC mode** — a stable JSONL protocol over stdin/stdout.
+One pi process per Telegram chat keeps context alive across messages.
 
-The `TaskSource` interface enables pluggable task management:
+## Directory layout
 
-```typescript
-interface TaskSource {
-  getTaskList(): Promise<TaskSummary[]>;
-  getTaskDetails(id: string): Promise<TaskDetails | null>;
-  appendDetails(id: string, input: AppendDetailsInput): Promise<void>;
-  startWorking(id: string): Promise<void>;
-  stopWorkingNeedInfo(id: string): Promise<void>;
-  stopWorkingNeedReview(id: string): Promise<void>;
-  markComplete(id: string): Promise<void>;
-}
+```
+programming/
+├── Dockerfile
+├── docker-compose.yml
+├── .env.example
+├── install/
+│   ├── 00-base.sh        system packages, locale
+│   ├── 10-node.sh        Node.js 22 LTS + pi agent (global)
+│   ├── 20-mise.sh        mise — per-project language versions
+│   ├── 30-github.sh      GitHub CLI (gh)
+│   ├── 40-user-setup.sh  'agent' user, workspace, SSH dir
+│   └── 50-entrypoint.sh  writes /home/agent/entrypoint.sh
+└── bot/
+    ├── bot.js            Telegram ↔ pi RPC bridge
+    └── package.json      telegraf dependency
 ```
 
-### Included Implementations
+## Local development
 
-#### Markdown (Default)
+Run the backend and web frontend locally without Docker.
 
-Tasks are markdown files with YAML frontmatter. Simple, version-controllable, no dependencies.
+### Backend (`robot-fastify-backend`)
+
+**Prerequisites:** [Bun](https://bun.sh) installed.
 
 ```bash
-# Config in .robot-mill.json
-{
-  "taskSource": "markdown",
-  "tasksDir": "./tasks"
-}
+cd robot-fastify-backend
+
+# Install dependencies (if not done yet)
+bun install
+
+# Set your Anthropic API key
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env.local
+
+# Start dev server (auto-reloads on file changes)
+bun run dev
 ```
 
-#### Jira
-
-Connect to Atlassian Jira for enterprise task management.
+The server starts at **`http://127.0.0.1:3100`**. Verify with:
 
 ```bash
-# Environment variables
-export JIRA_HOST=company.atlassian.net
-export JIRA_EMAIL=robot@company.com
-export JIRA_API_TOKEN=...
-export JIRA_PROJECT=PROJ
-
-# Config in .robot-mill.json
-{
-  "taskSource": "jira",
-  "jira": {
-    "host": "company.atlassian.net",
-    "project": "PROJ"
-  }
-}
+curl http://localhost:3100/health_check
 ```
 
-## Git Worktrees
+> Sessions and workspace are stored in `.data/` (git-ignored).
 
-Robot Mill uses git worktrees for parallel task execution:
-
-```
-main-repo/                    # Main repository (don't work here)
-.worktrees/
-├── task-001/                 # Worktree for task-001
-│   ├── .robot-task          # Task ID marker
-│   └── ...                  # Full repo checkout on robot/task-001 branch
-├── task-002/                 # Worktree for task-002
-│   └── ...                  # Separate branch, separate state
-```
-
-Benefits:
-- **Isolation**: Each task has its own working directory
-- **Parallel Work**: Robot can switch between tasks instantly
-- **Clean State**: No uncommitted changes polluting other tasks
-- **Easy Cleanup**: Remove worktree when task is done
-
-## Docker
-
-### Build & Run
+### Web frontend (`web-variations-frontend`)
 
 ```bash
-# Build
-docker compose build
+cd web-variations-frontend
 
-# Run interactively
-docker compose run --rm robot
+# Install dependencies (if not done yet)
+bun install
 
-# Run autonomously in background
-docker compose up -d robot
-
-# View logs
-docker compose logs -f robot
+# Start Vite dev server
+bun run dev
 ```
 
-### Environment Variables
+Vite will print the local URL (typically **`http://localhost:5173`**).
 
-Create a `.env` file:
+> Start the backend first so it's ready when the frontend connects.
+
+---
+
+## Quick start
+
+### 1. Configure
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...  # Optional
-ROBOT_PROVIDER=anthropic
-ROBOT_MODEL=claude-sonnet-4-20250514
-
-# Jira (optional)
-JIRA_HOST=company.atlassian.net
-JIRA_EMAIL=robot@company.com
-JIRA_API_TOKEN=...
-JIRA_PROJECT=PROJ
+cp .env.example .env
+# Edit .env — at minimum set ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, ALLOWED_CHAT_IDS
 ```
 
-## Commands (justfile)
+### 2. GitHub authentication (choose one)
+
+**Option A — SSH key (recommended for private repos)**
+```bash
+mkdir -p secrets
+cp ~/.ssh/your_deploy_key secrets/github_ssh_key
+chmod 600 secrets/github_ssh_key
+```
+
+**Option B — HTTPS token**
+```
+# Set GITHUB_TOKEN in .env; remove the secrets block from docker-compose.yml
+```
+
+If you only use public repos, skip this step and remove the `secrets:` block from
+`docker-compose.yml`.
+
+### 3. Build & run
 
 ```bash
-just                    # Show all commands
-
-# Robot
-just robot              # Interactive mode
-just robot-auto         # Autonomous mode
-just robot-task ID      # Specific task
-
-# Tasks
-just tasks              # List all
-just tasks-available    # List todo
-just tasks-review       # List in_review
-just task ID            # Show task
-just task-create        # Create new
-just task-approve ID    # Approve
-just task-reject ID "reason"  # Request changes
-
-# Docker
-just docker-build       # Build image
-just docker-robot       # Run in Docker
-just docker-robot-auto  # Run autonomous in Docker
+docker compose up --build -d
+docker compose logs -f
 ```
 
-## Extending
+### 4. Talk to your agent
 
-### Add a New Task Source
+Open Telegram, find your bot, and:
 
-1. Implement the `TaskSource` interface:
+```
+/start                        — start a pi session
+/repo kirhgoff/blakablaka     — clone repo and work in it
+/repo kirhgoff/note-ninja-nextjs
+/repo kirhgoff/vary-workshop
+/repo kirhgoff/robot-mill
 
-```typescript
-// src/sources/linear-source.ts
-export class LinearTaskSource implements TaskSource {
-  // Implement all methods
-}
+Hey pi, what files are in the current directory?
+Write tests for the auth module.
+Fix the failing CI test in src/api.ts.
 ```
 
-2. Add to the factory:
+## Bot commands
 
-```typescript
-// src/sources/index.ts
-case "linear":
-  return new LinearTaskSource(config);
-```
+| Command | Description |
+|---------|-------------|
+| `/start` | Start a new pi session (kills any existing one) |
+| `/stop` | End the session |
+| `/new` | Fresh conversation, same pi process (resets context) |
+| `/abort` | Abort the current pi operation |
+| `/status` | Show session state |
+| `/repo <url\|user/name>` | Clone repo (if needed) and switch session into it |
 
-3. Update config options.
+Any other message is forwarded to pi as a prompt.
 
-### Customize the Agent
+## Per-project language versions
 
-Edit `.pi/agents/robot.md` to change:
-- Personality and communication style
-- Workflow rules and guidelines
-- Tool usage patterns
+pi uses `mise` to manage runtimes. If a cloned repo contains a `.mise.toml` or
+`.tool-versions` file, pi will detect and install the right Node / Python / Ruby /
+Go / etc. version automatically when you ask it to work on the project.
 
-### Add Custom Tools
+## Customising pi
 
-Edit `.pi/extensions/robot-mill.ts` to add new tools:
+Drop extensions, skills, or prompt templates into the `pi-home` Docker volume
+(`/home/agent/.pi/agent/`) to customise pi's behaviour across all sessions.
 
-```typescript
-pi.registerTool({
-  name: "my_tool",
-  description: "...",
-  parameters: MySchema,
-  async execute(_id, params) {
-    // Implementation
-  },
-});
-```
+## Security notes
 
-## License
-
-MIT
+- Set `ALLOWED_CHAT_IDS` to your own Telegram chat ID.
+- The `agent` user has `NOPASSWD` sudo inside the container — treat the container
+  as a trusted workload and don't expose any ports.
+- Use Docker secrets or a proper secrets manager for API keys in production.
