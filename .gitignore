@@ -1,34 +1,9 @@
-# Dependencies
-node_modules/
-bun.lockb
-
-# Build
-dist/
-
-# Environment
 .env
 .env.local
-
-# Robot working directories
-.worktrees/
-repos/
-
-# Task marker files
-.robot-task
-
-# IDE
+secrets/
+node_modules/
+dist/
+.data/
 .idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-logs/
-
-.pi/agent-sessions/
-tasks/
+target-data/
+bun.lock

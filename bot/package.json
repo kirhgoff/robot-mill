@@ -1,0 +1,12 @@
+{
+  "name": "pi-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot bridge for pi coding agent (RPC mode)",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.16.3"
+  }
+}
