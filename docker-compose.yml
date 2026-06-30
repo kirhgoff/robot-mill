@@ -33,33 +33,34 @@ services:
       - ${TARGET_DATA_PATH}:/data/target
 
   # ── Web frontend: variation manager UI ───────────────────────────────────────
-  web:
-    build:
-      context: ./web-variations-frontend
-    restart: unless-stopped
-    ports:
-      - "${WEB_PORT}:3000"
-    environment:
-      BACKEND_URL: http://backend:3100
-    depends_on:
-      - backend
-
-  # ── Telegram frontend ───────────────────────────────────────────────────────
-  # telegram:
-  #   build: .
-  #   image: pi-agent:latest
+  # web:
+  #   build:
+  #     context: ./web-variations-frontend
   #   restart: unless-stopped
-  #   command: ["bun", "run", "/home/agent/telegram-frontend/src/index.ts"]
+  #   ports:
+  #     - "${WEB_PORT}:3000"
+  #   environment:
+  #     BACKEND_URL: http://backend:3100
   #   depends_on:
   #     - backend
-  #   environment:
-  #     TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-  #     ALLOWED_CHAT_IDS: ${ALLOWED_CHAT_IDS}
-  #     BACKEND_URL: http://backend:3100
-  #     BACKEND_WS_URL: ws://backend:3100/ws
-  #     WORKSPACE: /workspace
-  #     PI_PROVIDER: ${PI_PROVIDER}
-  #     PI_MODEL: ${PI_MODEL}
+
+  # ── Telegram frontend ───────────────────────────────────────────────────────
+  telegram:
+    profiles: ["telegram"]
+    build: .
+    image: pi-agent:latest
+    restart: unless-stopped
+    command: ["bun", "run", "/home/agent/telegram-frontend/src/index.ts"]
+    depends_on:
+      - backend
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      ALLOWED_CHAT_IDS: ${ALLOWED_CHAT_IDS}
+      BACKEND_URL: http://backend:3100
+      BACKEND_WS_URL: ws://backend:3100/ws
+      WORKSPACE: /workspace
+      PI_PROVIDER: ${PI_PROVIDER}
+      PI_MODEL: ${PI_MODEL}
 
 volumes:
   workspace:
