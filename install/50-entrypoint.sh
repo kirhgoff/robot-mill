@@ -31,12 +31,6 @@ fi
 [ -n "${GIT_USER_EMAIL:-}" ] && git config --global user.email "$GIT_USER_EMAIL"
 [ -n "${GIT_USER_NAME:-}" ]  && git config --global user.name  "$GIT_USER_NAME"
 
-# ── Start Telegram bot or fall back to shell ───────────────────────────────────
-if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-    echo "Starting Telegram bot..."
-    exec node /home/agent/bot/bot.js
-fi
-
 exec "$@"
 ENTRYPOINT
 

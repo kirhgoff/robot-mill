@@ -8,6 +8,7 @@ services:
     environment:
       APP_ENV: production
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       PI_PROVIDER: ${PI_PROVIDER}
       PI_MODEL: ${PI_MODEL}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL}

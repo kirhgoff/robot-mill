@@ -33,8 +33,24 @@ ssh kirhgoff@192.168.0.31 'cd /home/kirhgoff/Projects/robot-mill; docker compose
 Telegram bot setup:
 
 1. Create a bot with `@BotFather` and put its token in remote `.env` as `TELEGRAM_BOT_TOKEN`.
-2. Get your Telegram chat id from `@userinfobot` and put it in `ALLOWED_CHAT_IDS`.
-3. Put a real `ANTHROPIC_API_KEY` in remote `.env`.
-4. Enable the `telegram` service in `docker-compose.yml`.
-5. Redeploy.
-6. Send `/start` to the bot, then send normal prompts.
+2. Get your Telegram chat id and put it in `ALLOWED_CHAT_IDS` (empty allows everyone — dev only).
+3. Set the provider key in remote `.env` matching `PI_PROVIDER` (`ANTHROPIC_API_KEY` must always be present so config validation passes; `OPENROUTER_API_KEY` is used when `PI_PROVIDER=openrouter`).
+4. The `telegram` service lives behind the `telegram` Compose profile — deploy with the flag below to start it.
+5. Send `/start` to the bot, then send normal prompts.
+
+AI provider:
+
+- `PI_PROVIDER=openrouter` with `PI_MODEL=anthropic/claude-opus-4.8` routes through OpenRouter (key in `OPENROUTER_API_KEY`).
+- `pi` inherits the backend container's env, so any provider key added to the backend `environment:` block reaches the agent.
+
+Deploy with the Telegram service enabled (from another machine):
+
+```fish
+./scripts/deploy-remote.fish --telegram
+```
+
+Notes:
+
+- `.env` is gitignored and is NOT managed by the deploy script. Set secrets directly in the remote `.env`; they persist across deploys.
+- The container entrypoint runs the Compose `command:` for each service (`install/50-entrypoint.sh`). It previously hijacked any service that had `TELEGRAM_BOT_TOKEN` set to run a removed `bot/bot.js`; that branch was removed.
+- The `pi-home` named volume (`/home/agent/.pi`) must be owned by `agent` (uid 1001) or `pi` fails with `EACCES`.
