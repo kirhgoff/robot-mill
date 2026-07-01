@@ -4,7 +4,7 @@ set -euo pipefail
 export PATH="$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 RUNNER_DIR="$(cd "$(dirname "$0")" && pwd)"
-ENV_FILE="${LINEAR_CONNECTOR_ENV:-$HOME/robot-mill/linear-connector.env}"
+ENV_FILE="${LINEAR_CONNECTOR_ENV:-$HOME/.envs/robot-mill/linear-connector.env}"
 SESSION="robot-mill-linear"
 
 if [ ! -f "$ENV_FILE" ]; then

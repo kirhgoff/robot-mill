@@ -4,7 +4,7 @@ set -euo pipefail
 export PATH="$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 RUNNER_DIR="$(cd "$(dirname "$0")" && pwd)"
-ENV_FILE="${HOST_RUNNER_ENV:-$HOME/robot-mill/host-runner.env}"
+ENV_FILE="${HOST_RUNNER_ENV:-$HOME/.envs/robot-mill/host-runner.env}"
 SESSION="robot-mill-host-runner"
 
 if [ ! -f "$ENV_FILE" ]; then
