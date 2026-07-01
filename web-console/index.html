@@ -12,6 +12,10 @@
     --accent: #ff2bd6; --accent2: #00e5ff;
     --ok: #21e6a0; --warn: #ffcf3a; --err: #ff4d6d;
     --font: "JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+    /* poop house happy palette (fixed) */
+    --ph-bg1: #012a5e; --ph-bg2: #0350a8; --ph-ink: #fff4d6;
+    --ph-orange: #ff9e18; --ph-orange2: #ffbe4d; --ph-card: rgba(255,255,255,0.06);
+    --ph-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
@@ -22,13 +26,32 @@
     background: var(--bg);
     background-image: radial-gradient(1100px 700px at 75% -12%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%);
     background-attachment: fixed;
+    transition: background 0.4s ease;
+  }
+  /* when poop house view is active, swap to happy gradient */
+  body.ph {
+    background: linear-gradient(150deg, var(--ph-bg1) 0%, var(--ph-bg2) 100%);
+    color: var(--ph-ink);
   }
   .wrap { max-width: 1100px; margin: 0 auto; padding: 16px 14px 60px; }
   header { border: 1px solid var(--line); background: rgba(17,17,29,0.7); backdrop-filter: blur(3px);
-    padding: 12px 14px; margin-bottom: 16px; }
+    padding: 10px 14px; margin-bottom: 16px; transition: background 0.4s ease, border-color 0.4s ease; }
+  body.ph header { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.18); }
+
+  /* ── view title tabs ─────────────────────────────── */
+  .titlebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .vtab { background: none; border: none; padding: 4px 2px; cursor: pointer; font-family: var(--font);
+    font-weight: 800; letter-spacing: 2px; text-transform: uppercase; font-size: clamp(15px, 2.4vw, 22px);
+    color: var(--dim); opacity: 0.32; transition: opacity 0.2s, color 0.2s, text-shadow 0.2s; line-height: 1; }
+  .vtab:hover { opacity: 0.7; }
+  .vtab.active { opacity: 1; }
+  .vtab[data-view="robotmill"].active { color: var(--accent); text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent); }
+  .vtab[data-view="poophouse"].active { color: var(--ph-orange2); text-shadow: 0 0 12px rgba(255,158,24,0.6); }
+  .vtab .ph-emoji { font-size: 0.9em; }
+
   .logo { color: var(--accent); text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
-    font-size: clamp(5px, 1.7vw, 11px); line-height: 1.05; white-space: pre; overflow-x: auto; margin: 0 0 8px; }
-  .bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; }
+    font-size: clamp(5px, 1.6vw, 10px); line-height: 1.05; white-space: pre; overflow-x: auto; margin: 12px 0 4px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; margin-top: 10px; }
   .status-pill { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
   .dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
   .controls { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
@@ -36,7 +59,7 @@
     font-family: var(--font); font-size: 12px; background: var(--panel2); color: var(--fg);
     border: 1px solid var(--line); padding: 6px 10px; cursor: pointer; border-radius: 2px;
   }
-  button:hover { border-color: var(--accent); color: var(--accent); }
+  .controls button:hover, .controls select:hover { border-color: var(--accent); color: var(--accent); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
   .card { border: 1px solid var(--line); background: rgba(17,17,29,0.72); padding: 12px 14px; position: relative; }
   .card::before { content: ""; position: absolute; left: 0; top: 0; width: 3px; height: 100%; background: var(--accent); opacity: 0.7; }
@@ -63,35 +86,125 @@
   .foot { margin-top: 20px; color: var(--dim); font-size: 11px; text-align: center; letter-spacing: 1px; }
   .blink { animation: blink 1.1s steps(2) infinite; } @keyframes blink { 0%{opacity:1} 50%{opacity:0.25} }
   a { color: var(--accent2); }
+
+  /* ── view switching ──────────────────────────────── */
+  .view { display: none; }
+  .view.active { display: block; animation: fade 0.3s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  /* ── poop house (happy) ──────────────────────────── */
+  #view-poophouse { font-family: var(--ph-sans); }
+  .ph-hero { text-align: center; margin: 4px 0 26px; }
+  .ph-hero h1 { font-size: clamp(2rem, 5vw, 2.8rem); margin: 0; color: var(--ph-orange2);
+    text-shadow: 0 3px 18px rgba(0,0,0,0.35); letter-spacing: 0.5px; }
+  .ph-hero p { margin: 6px 0 0; opacity: 0.75; font-size: 1rem; }
+  .ph-section { margin-bottom: 2.4rem; }
+  .ph-section h2 { font-size: 1.15rem; margin: 0 0 0.4rem; color: var(--ph-orange);
+    display: flex; align-items: center; gap: 0.5rem; }
+  .ph-note { opacity: 0.55; margin: 0 0 1.1rem; font-size: 0.85rem; }
+  .ph-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+  .ph-card { background: var(--ph-card); border: 1px solid rgba(255,255,255,0.14); border-radius: 16px;
+    padding: 1.1rem 1.2rem; text-decoration: none; color: inherit; display: block; position: relative;
+    overflow: hidden; transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease; }
+  .ph-card::after { content: ""; position: absolute; inset: 0; border-radius: 16px; pointer-events: none;
+    background: radial-gradient(120px 80px at 85% -20%, rgba(255,158,24,0.25), transparent 70%); opacity: 0; transition: opacity 0.22s; }
+  .ph-card:hover { transform: translateY(-5px); border-color: var(--ph-orange); background: rgba(255,158,24,0.12);
+    box-shadow: 0 14px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,158,24,0.3); }
+  .ph-card:hover::after { opacity: 1; }
+  .ph-card-head { display: flex; align-items: center; gap: 0.85rem; margin-bottom: 0.6rem; }
+  .ph-icon { font-size: 1.55rem; width: 46px; height: 46px; flex: none; display: flex; align-items: center;
+    justify-content: center; background: rgba(255,158,24,0.18); border-radius: 12px; transition: transform 0.22s; }
+  .ph-card:hover .ph-icon { transform: scale(1.08) rotate(-4deg); }
+  .ph-title { font-size: 1.1rem; font-weight: 700; }
+  .ph-port { font-size: 0.78rem; color: var(--ph-orange2); font-family: var(--font); }
+  .ph-desc { opacity: 0.8; font-size: 0.88rem; margin: 0; }
+  .ph-optional .ph-card { background: rgba(255,255,255,0.035); }
+  .ph-optional .ph-icon { background: rgba(255,255,255,0.1); }
+  .ph-foot { text-align: center; margin-top: 2rem; opacity: 0.6; font-size: 0.9rem; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <pre class="logo" id="logo"></pre>
-    <div class="bar">
-      <span class="status-pill"><span class="dot" id="dot" style="color:var(--warn)"></span><span id="overall">booting…</span></span>
-      <div class="controls">
-        <select id="theme" title="theme"></select>
-        <button id="refresh" title="refresh">↻ sync</button>
+    <div class="titlebar">
+      <button class="vtab" data-view="robotmill" title="robot mill console">robot mill</button>
+      <button class="vtab active" data-view="poophouse" title="poop house dashboard"><span class="ph-emoji">🏠</span> poop house</button>
+    </div>
+
+    <!-- robot-mill-only header bits -->
+    <div id="rmHeader">
+      <pre class="logo" id="logo"></pre>
+      <div class="bar">
+        <span class="status-pill"><span class="dot" id="dot" style="color:var(--warn)"></span><span id="overall">booting…</span></span>
+        <div class="controls">
+          <select id="theme" title="theme"></select>
+          <button id="refresh" title="refresh">↻ sync</button>
+        </div>
       </div>
     </div>
   </header>
 
-  <div class="grid">
-    <div class="card"><h2>◈ components</h2><div id="health"><span class="muted blink">scanning…</span></div></div>
-    <div class="card"><h2>◈ system</h2><div id="system"><span class="muted blink">scanning…</span></div></div>
-    <div class="card"><h2>◈ agents</h2><div id="agents"><span class="muted blink">scanning…</span></div></div>
-    <div class="card" style="grid-column:1/-1">
-      <h2>▶ live output <span class="muted" id="streamState" style="text-transform:none;letter-spacing:0">connecting…</span></h2>
-      <div class="tabs" id="tabs"></div>
-      <div class="cmd">
-        <textarea id="cmdInput" rows="1" placeholder="select a host tab to send a prompt…" disabled autocomplete="off"></textarea>
-        <button id="cmdSend">send</button>
+  <!-- ══ ROBOT MILL VIEW ══════════════════════════════════════════ -->
+  <div class="view" id="view-robotmill">
+    <div class="grid">
+      <div class="card"><h2>◈ components</h2><div id="health"><span class="muted blink">scanning…</span></div></div>
+      <div class="card"><h2>◈ system</h2><div id="system"><span class="muted blink">scanning…</span></div></div>
+      <div class="card"><h2>◈ agents</h2><div id="agents"><span class="muted blink">scanning…</span></div></div>
+      <div class="card" style="grid-column:1/-1">
+        <h2>▶ live output <span class="muted" id="streamState" style="text-transform:none;letter-spacing:0">connecting…</span></h2>
+        <div class="tabs" id="tabs"></div>
+        <div class="cmd">
+          <textarea id="cmdInput" rows="1" placeholder="select a host tab to send a prompt…" disabled autocomplete="off"></textarea>
+          <button id="cmdSend">send</button>
+        </div>
+        <pre id="log" style="max-height:360px;overflow:auto;margin:0;white-space:pre-wrap;word-break:break-word;font-size:12px"></pre>
       </div>
-      <pre id="log" style="max-height:360px;overflow:auto;margin:0;white-space:pre-wrap;word-break:break-word;font-size:12px"></pre>
     </div>
   </div>
+
+  <!-- ══ POOP HOUSE VIEW ══════════════════════════════════════════ -->
+  <div class="view active" id="view-poophouse">
+    <div class="ph-hero">
+      <h1>🏠 Poop House</h1>
+      <p>Your streaming soup of poop</p>
+    </div>
+
+    <div class="ph-section">
+      <h2>📺 Main Services</h2>
+      <div class="ph-grid">
+        <a data-port="5055" class="ph-card"><div class="ph-card-head"><div class="ph-icon">🎬</div><div><div class="ph-title">Jellyseerr</div><div class="ph-port">:5055</div></div></div><p class="ph-desc">Request movies and TV shows</p></a>
+        <a data-port="8096" class="ph-card"><div class="ph-card-head"><div class="ph-icon">📺</div><div><div class="ph-title">Jellyfin</div><div class="ph-port">:8096</div></div></div><p class="ph-desc">Watch movies and TV shows</p></a>
+        <a data-port="4533" class="ph-card"><div class="ph-card-head"><div class="ph-icon">🎵</div><div><div class="ph-title">Navidrome</div><div class="ph-port">:4533</div></div></div><p class="ph-desc">Stream music</p></a>
+        <a data-port="13378" class="ph-card"><div class="ph-card-head"><div class="ph-icon">📚</div><div><div class="ph-title">Audiobookshelf</div><div class="ph-port">:13378</div></div></div><p class="ph-desc">Listen to audiobooks</p></a>
+        <a data-port="5030" class="ph-card"><div class="ph-card-head"><div class="ph-icon">🎧</div><div><div class="ph-title">slskd</div><div class="ph-port">:5030</div></div></div><p class="ph-desc">Search and download music</p></a>
+        <a data-port="8080" class="ph-card"><div class="ph-card-head"><div class="ph-icon">⬇️</div><div><div class="ph-title">qBittorrent</div><div class="ph-port">:8080</div></div></div><p class="ph-desc">Download torrents</p></a>
+        <a data-port="8081" class="ph-card"><div class="ph-card-head"><div class="ph-icon">📹</div><div><div class="ph-title">MeTube</div><div class="ph-port">:8081</div></div></div><p class="ph-desc">Download YouTube videos</p></a>
+      </div>
+    </div>
+
+    <div class="ph-section ph-optional">
+      <h2>⚙️ Management Services</h2>
+      <p class="ph-note">Advanced tools for power users</p>
+      <div class="ph-grid">
+        <a data-port="8686" class="ph-card"><div class="ph-card-head"><div class="ph-icon">🎸</div><div><div class="ph-title">Lidarr</div><div class="ph-port">:8686</div></div></div><p class="ph-desc">Manage music library</p></a>
+        <a data-port="8989" class="ph-card"><div class="ph-card-head"><div class="ph-icon">📺</div><div><div class="ph-title">Sonarr</div><div class="ph-port">:8989</div></div></div><p class="ph-desc">Manage TV shows</p></a>
+        <a data-port="7878" class="ph-card"><div class="ph-card-head"><div class="ph-icon">🎬</div><div><div class="ph-title">Radarr</div><div class="ph-port">:7878</div></div></div><p class="ph-desc">Manage movies</p></a>
+        <a data-port="9696" class="ph-card"><div class="ph-card-head"><div class="ph-icon">🔍</div><div><div class="ph-title">Prowlarr</div><div class="ph-port">:9696</div></div></div><p class="ph-desc">Manage indexers</p></a>
+        <a data-port="6767" class="ph-card"><div class="ph-card-head"><div class="ph-icon">💬</div><div><div class="ph-title">Bazarr</div><div class="ph-port">:6767</div></div></div><p class="ph-desc">Manage subtitles</p></a>
+      </div>
+    </div>
+
+    <div class="ph-section">
+      <h2>📊 System</h2>
+      <div class="ph-grid">
+        <a data-port="3000" class="ph-card"><div class="ph-card-head"><div class="ph-icon">🏠</div><div><div class="ph-title">Homepage</div><div class="ph-port">:3000</div></div></div><p class="ph-desc">Dashboard with widgets</p></a>
+        <a data-port="61208" class="ph-card"><div class="ph-card-head"><div class="ph-icon">📊</div><div><div class="ph-title">Glances</div><div class="ph-port">:61208</div></div></div><p class="ph-desc">System monitoring</p></a>
+      </div>
+    </div>
+
+    <div class="ph-foot">All downloads routed through VPN 🔒</div>
+  </div>
+
   <div class="foot" id="foot">robot-mill console · <span id="clock"></span></div>
 </div>
 
@@ -104,6 +217,26 @@ const LOGO = String.raw`
 |_| \_\\___/|____/ \___/ |_|   |_|  |_|___|_____|_____|`;
 document.getElementById("logo").textContent = LOGO;
 
+// ── View tabs (robot mill / poop house) ──────────────────
+function setView(view){
+  document.querySelectorAll(".vtab").forEach(el => el.classList.toggle("active", el.dataset.view === view));
+  document.getElementById("view-robotmill").classList.toggle("active", view === "robotmill");
+  document.getElementById("view-poophouse").classList.toggle("active", view === "poophouse");
+  const ph = view === "poophouse";
+  document.body.classList.toggle("ph", ph);
+  document.getElementById("rmHeader").style.display = ph ? "none" : "block";
+  document.getElementById("foot").style.display = ph ? "none" : "block";
+  localStorage.setItem("rm-view", view);
+  document.querySelector('meta[name=theme-color]').setAttribute("content", ph ? "#012a5e" : (THEMES[themeSel.value]||THEMES.cyberpunk)["--bg"]);
+}
+document.querySelectorAll(".vtab").forEach(el => el.onclick = () => setView(el.dataset.view));
+
+// poop house links: build from current hostname (works on LAN, Tailscale, etc.)
+const phHost = window.location.hostname;
+document.querySelectorAll('#view-poophouse a[data-port]').forEach(link => {
+  link.href = `http://${phHost}:${link.getAttribute("data-port")}`;
+});
+
 const THEMES = {
   cyberpunk: { "--bg":"#0a0a12","--panel":"#11111d","--panel2":"#171728","--fg":"#d7d7ee","--dim":"#6b6b8a","--line":"#26263b","--accent":"#ff2bd6","--accent2":"#00e5ff","--ok":"#21e6a0","--warn":"#ffcf3a","--err":"#ff4d6d", a:[1.0,0.17,0.84], b:[0.0,0.9,1.0] },
   matrix:    { "--bg":"#000600","--panel":"#03140a","--panel2":"#04200f","--fg":"#8affb0","--dim":"#2f7048","--line":"#0d3b22","--accent":"#00ff66","--accent2":"#7dffb0","--ok":"#00ff66","--warn":"#d7ff3a","--err":"#ff5c5c", a:[0.0,1.0,0.4], b:[0.5,1.0,0.7] },
@@ -114,7 +247,7 @@ const THEMES = {
 function applyTheme(name) {
   const t = THEMES[name] || THEMES.cyberpunk;
   for (const k in t) if (k.startsWith("--")) document.documentElement.style.setProperty(k, t[k]);
-  document.querySelector('meta[name=theme-color]').setAttribute("content", t["--bg"]);
+  if (!document.body.classList.contains("ph")) document.querySelector('meta[name=theme-color]').setAttribute("content", t["--bg"]);
   localStorage.setItem("rm-theme", name);
 }
 
@@ -123,6 +256,9 @@ for (const name of Object.keys(THEMES)) { const o = document.createElement("opti
 themeSel.value = localStorage.getItem("rm-theme") || "cyberpunk";
 themeSel.onchange = () => applyTheme(themeSel.value);
 applyTheme(themeSel.value);
+
+// default to poop house unless the user last chose robot mill
+setView(localStorage.getItem("rm-view") || "poophouse");
 
 // ── Data + rendering ─────────────────────────────────────
 const $ = (id) => document.getElementById(id);

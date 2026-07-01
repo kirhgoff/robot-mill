@@ -30,6 +30,8 @@ services:
       TARGET_PORT_MAX: ${TARGET_PORT_MAX}
     ports:
       - "${BACKEND_PORT}:3100"
+      # Homepage: serve the console (Poop House by default) on the site root.
+      - "${HOMEPAGE_PORT:-80}:3100"
       - "${TARGET_PORT_MIN}-${TARGET_PORT_MAX}:${TARGET_PORT_MIN}-${TARGET_PORT_MAX}"
     volumes:
       - ./data/workspace:/workspace
