@@ -6,7 +6,7 @@ import type { AgentManager } from "../../agent-manager/index";
 
 async function fetchJson<T>(url: string): Promise<T | null> {
 	try {
-		const res = await fetch(url);
+		const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
 		if (!res.ok) return null;
 		return (await res.json()) as T;
 	} catch {
