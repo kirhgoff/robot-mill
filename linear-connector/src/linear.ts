@@ -82,7 +82,7 @@ export class LinearClient {
 		}>(
 			`query($id: String!) {
 				workflowState(id: $id) {
-					issues(filter: { state: { id: { eq: $id } } }) {
+					issues {
 						nodes { id identifier title description labels { nodes { name } } }
 					}
 				}
