@@ -27,6 +27,10 @@ const ALLOWED_CHAT_IDS = (process.env.ALLOWED_CHAT_IDS || "")
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3100";
 const BACKEND_WS_URL = process.env.BACKEND_WS_URL || "ws://localhost:3100/ws";
+const HOST_RUNNER_URL =
+	process.env.HOST_RUNNER_URL || "http://host.docker.internal:3200";
+const HOST_RUNNER_WS_URL =
+	process.env.HOST_RUNNER_WS_URL || "ws://host.docker.internal:3200/ws";
 const WORKSPACE = process.env.WORKSPACE || "/workspace";
 
 const bot = new TelegramBot({
@@ -34,6 +38,8 @@ const bot = new TelegramBot({
 	allowedChatIds: ALLOWED_CHAT_IDS,
 	backendBaseUrl: BACKEND_URL,
 	backendWsUrl: BACKEND_WS_URL,
+	hostRunnerBaseUrl: HOST_RUNNER_URL,
+	hostRunnerWsUrl: HOST_RUNNER_WS_URL,
 	workspace: WORKSPACE,
 	piProvider: process.env.PI_PROVIDER || "anthropic",
 	piModel: process.env.PI_MODEL || undefined,

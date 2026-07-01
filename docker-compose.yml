@@ -54,11 +54,15 @@ services:
     command: ["bun", "run", "/home/agent/telegram-frontend/src/index.ts"]
     depends_on:
       - backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       ALLOWED_CHAT_IDS: ${ALLOWED_CHAT_IDS}
       BACKEND_URL: http://backend:3100
       BACKEND_WS_URL: ws://backend:3100/ws
+      HOST_RUNNER_URL: ${HOST_RUNNER_URL:-http://host.docker.internal:3200}
+      HOST_RUNNER_WS_URL: ${HOST_RUNNER_WS_URL:-ws://host.docker.internal:3200/ws}
       WORKSPACE: /workspace
       PI_PROVIDER: ${PI_PROVIDER}
       PI_MODEL: ${PI_MODEL}
