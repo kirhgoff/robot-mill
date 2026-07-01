@@ -1,0 +1,15 @@
+{
+  "name": "health-monitor",
+  "version": "1.0.0",
+  "description": "Scheduled health checks of robot-mill projects by prompting host agents",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "bun-types": "^1.3.14",
+    "typescript": "^6.0.3"
+  }
+}

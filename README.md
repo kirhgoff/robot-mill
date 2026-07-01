@@ -39,6 +39,7 @@ robot-mill/
 ├── discord-frontend/          Discord bot (same commands, behind `discord` profile)
 ├── host-runner/               pi agents in host tmux sessions on real projects
 ├── linear-connector/          dispatches Linear issues to agents
+├── health-monitor/            scheduled health checks via host agents
 ├── web-variations-frontend/   experimental UI (disabled)
 ├── scripts/deploy-remote.fish redeploy to the peeper box
 └── DEPLOYMENT_NOTES.md
@@ -102,6 +103,7 @@ per deploy with flags (they combine); omit a flag to leave one off. No need to e
 | `web` (variations UI) | container profile | `deploy --web` | omit the flag |
 | `host-runner` | host tmux | `host-runner/start.sh` | `tmux kill-session -t robot-mill-host-runner` |
 | `linear-connector` | host tmux | `linear-connector/start.sh` | `tmux kill-session -t robot-mill-linear` |
+| `health-monitor` | host tmux | `health-monitor/start.sh` | `tmux kill-session -t robot-mill-health` |
 
 ```fish
 ./scripts/deploy-remote.fish --telegram --discord   # backend + both bots
@@ -205,6 +207,21 @@ sudo ufw allow from 172.16.0.0/12 to any port 3200 proto tcp
 
 (The linear-connector runs on the host and reaches the host-runner over loopback,
 so it needs no firewall change.)
+
+## Health monitor
+
+Runs scheduled health checks by **prompting the host agents** and parsing a
+`HEALTH: OK` / `HEALTH: FAIL - <reason>` verdict from each:
+
+- **media-streaming** — verifies services (uses the project's health-check skill if
+  present, else `docker compose ps`).
+- **robot-mill** — `docker compose ps` + backend `health_check`.
+- **eurotrip-support** — tracks last-sync age; if >24h stale it runs the full sync
+  (`bun run all`) and records the new timestamp (self-remediating).
+
+Status is exposed at `http://127.0.0.1:3300/` (text) and `/health` (JSON). Intervals
+and thresholds are env-configurable (`CHECK_INTERVAL_MS`, `EUROTRIP_MAX_AGE_MS`, …).
+Start: `health-monitor/start.sh` (tmux session `robot-mill-health`).
 
 ## Linear connector
 
