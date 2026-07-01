@@ -33,17 +33,18 @@ services:
       - ./data/agent-sessions:/data/agent-sessions
       - ./data/target:/data/target
 
-  # ── Web frontend: variation manager UI ───────────────────────────────────────
-  # web:
-  #   build:
-  #     context: ./web-variations-frontend
-  #   restart: unless-stopped
-  #   ports:
-  #     - "${WEB_PORT}:3000"
-  #   environment:
-  #     BACKEND_URL: http://backend:3100
-  #   depends_on:
-  #     - backend
+  # ── Web frontend: variation manager UI (experimental) ────────────────────────
+  web:
+    profiles: ["web"]
+    build:
+      context: ./web-variations-frontend
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT}:3000"
+    environment:
+      BACKEND_URL: http://backend:3100
+    depends_on:
+      - backend
 
   # ── Telegram frontend ───────────────────────────────────────────────────────
   telegram:

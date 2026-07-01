@@ -88,6 +88,28 @@ To get your Telegram chat ID for `ALLOWED_CHAT_IDS`: message the bot, then
 `.env` is gitignored and lives only on the remote — the deploy script never touches
 it. See `DEPLOYMENT_NOTES.md` for the full remote setup.
 
+## Components & toggles
+
+Optional containerized components are gated by **Compose profiles** — enable them
+per deploy with flags (they combine); omit a flag to leave one off. No need to edit
+`docker-compose.yml`.
+
+| Component | Type | Enable | Disable |
+|-----------|------|--------|---------|
+| `backend` | container | always on | — |
+| `telegram` | container profile | `deploy --telegram` | omit the flag |
+| `discord` | container profile | `deploy --discord` | omit the flag |
+| `web` (variations UI) | container profile | `deploy --web` | omit the flag |
+| `host-runner` | host tmux | `host-runner/start.sh` | `tmux kill-session -t robot-mill-host-runner` |
+| `linear-connector` | host tmux | `linear-connector/start.sh` | `tmux kill-session -t robot-mill-linear` |
+
+```fish
+./scripts/deploy-remote.fish --telegram --discord   # backend + both bots
+```
+
+Host-native components (`host-runner`, `linear-connector`) aren't compose services —
+start/stop them via their `start.sh` or by killing their tmux session.
+
 ## Bot commands
 
 Any message that isn't a command is forwarded to the active agent as a prompt.
