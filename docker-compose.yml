@@ -28,10 +28,10 @@ services:
       - "${BACKEND_PORT}:3100"
       - "${TARGET_PORT_MIN}-${TARGET_PORT_MAX}:${TARGET_PORT_MIN}-${TARGET_PORT_MAX}"
     volumes:
-      - workspace:/workspace
-      - pi-home:/home/agent/.pi
-      - agent-sessions:/data/agent-sessions
-      - ${TARGET_DATA_PATH}:/data/target
+      - ./data/workspace:/workspace
+      - ./data/pi-home:/home/agent/.pi
+      - ./data/agent-sessions:/data/agent-sessions
+      - ./data/target:/data/target
 
   # ── Web frontend: variation manager UI ───────────────────────────────────────
   # web:
@@ -62,9 +62,4 @@ services:
       WORKSPACE: /workspace
       PI_PROVIDER: ${PI_PROVIDER}
       PI_MODEL: ${PI_MODEL}
-
-volumes:
-  workspace:
-  pi-home:
-  agent-sessions:
 
