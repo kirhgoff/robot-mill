@@ -59,21 +59,29 @@ async function runOnHostRunner(project: string, task: string): Promise<string> {
 	return completion;
 }
 
-function pickTarget(labels: string[]): string | undefined {
-	return labels.find((l) => allowedProjects.includes(l));
+function pickTarget(issue: { project: string | null; labels: string[] }): string | undefined {
+	if (issue.project && allowedProjects.includes(issue.project)) return issue.project;
+	return issue.labels.find((l) => allowedProjects.includes(l));
 }
 
 async function processIssue(
-	issue: { id: string; identifier: string; title: string; description: string; labels: string[] },
+	issue: {
+		id: string;
+		identifier: string;
+		title: string;
+		description: string;
+		labels: string[];
+		project: string | null;
+	},
 	inProgressId: string,
 	reviewId: string,
 ): Promise<void> {
-	const target = pickTarget(issue.labels);
+	const target = pickTarget(issue);
 	if (!target) {
 		await linear.moveIssue(issue.id, inProgressId);
 		await linear.comment(
 			issue.id,
-			`🤖 No target project label. Add a label matching one of: ${allowedProjects.join(", ")}, then move me back to the agent queue.`,
+			`🤖 No target repo. Put me in a Linear project (or label me) matching one of: ${allowedProjects.join(", ")}, then move me back to the agent queue.`,
 		);
 		return;
 	}
