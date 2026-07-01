@@ -49,11 +49,16 @@
   .tag.run { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
   .tag.idle { color: var(--dim); }
   .s-ok { color: var(--ok); } .s-fail, .s-error { color: var(--err); } .s-unknown, .s-unreachable { color: var(--warn); }
-  .host { cursor: pointer; }
-  .host:hover .name { color: var(--accent); }
-  .promptbox { margin-top: 8px; display: none; gap: 6px; }
-  .promptbox.open { display: flex; }
-  .promptbox input { flex: 1; font-family: var(--font); font-size: 12px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); padding: 6px 8px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .tab { font-size: 11px; padding: 4px 9px; border: 1px solid var(--line); background: var(--panel2); color: var(--dim); cursor: pointer; border-radius: 2px; display: inline-flex; align-items: center; gap: 5px; }
+  .tab:hover { color: var(--accent); border-color: var(--accent); }
+  .tab.active { color: var(--bg); background: var(--accent); border-color: var(--accent); font-weight: 700; }
+  .tab .ld { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+  .cmd { display: flex; gap: 6px; margin-bottom: 10px; }
+  .cmd input { flex: 1; font-family: var(--font); font-size: 12px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); padding: 7px 9px; }
+  .cmd input:disabled { opacity: 0.45; }
+  .meter { height: 6px; background: var(--panel2); border: 1px solid var(--line); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+  .meter > span { display: block; height: 100%; background: var(--accent); }
   .muted { color: var(--dim); }
   .foot { margin-top: 20px; color: var(--dim); font-size: 11px; text-align: center; letter-spacing: 1px; }
   .blink { animation: blink 1.1s steps(2) infinite; } @keyframes blink { 0%{opacity:1} 50%{opacity:0.25} }
@@ -75,12 +80,16 @@
 
   <div class="grid">
     <div class="card"><h2>◈ components</h2><div id="health"><span class="muted blink">scanning…</span></div></div>
-    <div class="card"><h2>◈ host runners</h2><div id="hosts"><span class="muted blink">scanning…</span></div></div>
-    <div class="card"><h2>◈ agents</h2><div id="agents"><span class="muted blink">scanning…</span></div></div>
     <div class="card"><h2>◈ system</h2><div id="system"><span class="muted blink">scanning…</span></div></div>
+    <div class="card"><h2>◈ agents</h2><div id="agents"><span class="muted blink">scanning…</span></div></div>
     <div class="card" style="grid-column:1/-1">
       <h2>▶ live output <span class="muted" id="streamState" style="text-transform:none;letter-spacing:0">connecting…</span></h2>
-      <pre id="log" style="max-height:320px;overflow:auto;margin:0;white-space:pre-wrap;word-break:break-word;font-size:12px"></pre>
+      <div class="tabs" id="tabs"></div>
+      <div class="cmd">
+        <input id="cmdInput" placeholder="select a host tab to send a prompt…" disabled autocomplete="off" />
+        <button id="cmdSend">send</button>
+      </div>
+      <pre id="log" style="max-height:360px;overflow:auto;margin:0;white-space:pre-wrap;word-break:break-word;font-size:12px"></pre>
     </div>
   </div>
   <div class="foot" id="foot">robot-mill console · <span id="clock"></span></div>
@@ -119,6 +128,9 @@ applyTheme(themeSel.value);
 const $ = (id) => document.getElementById(id);
 function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
 function ago(ms){ if(!ms) return "—"; const s=Math.round((Date.now()-ms)/1000); if(s<60)return s+"s"; if(s<3600)return Math.round(s/60)+"m"; return Math.round(s/3600)+"h"; }
+function fmtBytes(n){ if(n==null) return "—"; const u=["B","K","M","G","T"]; let i=0; while(n>=1024&&i<u.length-1){n/=1024;i++;} return (n<10&&i>0?n.toFixed(1):Math.round(n))+u[i]; }
+function fmtDur(ms){ const s=Math.floor(ms/1000); if(s<60)return s+"s"; const m=Math.floor(s/60); if(m<60)return m+"m"; const h=Math.floor(m/60); if(h<24)return h+"h "+(m%60)+"m"; return Math.floor(h/24)+"d "+(h%24)+"h"; }
+function meterRow(label, used, total){ const pct = total?Math.round(used/total*100):0; return `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span class="name">${label}</span><span class="meta">${fmtBytes(total-used)} free / ${fmtBytes(total)} · ${pct}% used</span></div><div class="meter"><span style="width:${pct}%"></span></div></div>`; }
 
 async function refresh(){
   let d;
@@ -138,31 +150,7 @@ async function refresh(){
     </div></div>`).join("") : `<span class="muted">no health data (monitor offline?)</span>`;
 
   const hp = d.hostProjects || {allowed:[],running:[]};
-  const hostsBusy = $("hosts").querySelector(".promptbox.open") || $("hosts").contains(document.activeElement);
-  if (!hostsBusy) {
-  $("hosts").innerHTML = (hp.allowed||[]).map(p => {
-    const running = (hp.running||[]).includes(p);
-    return `<div class="row host" data-project="${esc(p)}">
-      <div style="flex:1">
-        <span class="name">${esc(p)}</span>
-        <span class="tag ${running?"run":"idle"}">${running?"live":"idle"}</span>
-        <div class="promptbox" id="pb-${esc(p)}">
-          <input placeholder="prompt ${esc(p)}…" />
-          <button>send</button>
-        </div>
-      </div></div>`;
-  }).join("") || `<span class="muted">host-runner unreachable</span>`;
-
-  document.querySelectorAll(".host").forEach(el => {
-    const project = el.dataset.project;
-    el.querySelector(".name").onclick = () => $("pb-"+project).classList.toggle("open");
-    const box = $("pb-"+project), input = box.querySelector("input"), btn = box.querySelector("button");
-    const send = async () => { const m = input.value.trim(); if(!m) return; btn.textContent="…";
-      try { await fetch(`/api/host/${encodeURIComponent(project)}/prompt`, {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({message:m})}); input.value=""; btn.textContent="sent ✓"; }
-      catch { btn.textContent="err"; } setTimeout(()=>btn.textContent="send",1500); };
-    btn.onclick = send; input.onkeydown = (e)=>{ if(e.key==="Enter") send(); };
-  });
-  }
+  renderTabs(hp);
 
   const agents = d.agents || [];
   $("agents").innerHTML = agents.length ? agents.map(a => `
@@ -172,16 +160,54 @@ async function refresh(){
     </div></div>`).join("") : `<span class="muted">no container agents running</span>`;
 
   const sys = d.system || {};
+  const hs = d.hostSystem;
+  const memRow = hs && hs.mem ? meterRow("memory", hs.mem.total - hs.mem.free, hs.mem.total) : "";
+  const diskRow = hs && hs.disk ? meterRow("disk", hs.disk.total - hs.disk.free, hs.disk.total) : "";
   $("system").innerHTML = `
-    <div class="row"><span class="name">uptime</span><span class="meta">${sys.uptime?Math.round(sys.uptime/1000)+"s":"—"}</span></div>
+    <div class="row"><span class="name">uptime</span><span class="meta">${sys.uptime?fmtDur(sys.uptime):"—"}</span></div>
     <div class="row"><span class="name">container agents</span><span class="meta">${sys.agentCount??"—"}</span></div>
     <div class="row"><span class="name">host projects</span><span class="meta">${(hp.allowed||[]).length} (${(hp.running||[]).length} live)</span></div>
-    <div class="row"><span class="name">components ok</span><span class="meta">${checks.filter(c=>c.status==="ok").length}/${checks.length}</span></div>`;
+    <div class="row"><span class="name">components ok</span><span class="meta">${checks.filter(c=>c.status==="ok").length}/${checks.length}</span></div>
+    ${memRow}${diskRow}`;
 }
 
-// ── Live output stream ───────────────────────────────────
+// ── Tabs, command input, filtered live output ────────────
 const logEl = $("log");
-function logLine(html){ const div = document.createElement("div"); div.style.marginBottom="4px"; div.innerHTML = html; logEl.appendChild(div); while(logEl.children.length>300) logEl.removeChild(logEl.firstChild); logEl.scrollTop = logEl.scrollHeight; }
+let events = [];
+let selectedTab = localStorage.getItem("rm-tab") || "all";
+let tabsKey = "";
+let allowedHosts = [];
+
+function matches(ev){ return selectedTab === "all" || ev.project === selectedTab; }
+function appendDom(html){ const div = document.createElement("div"); div.style.marginBottom="4px"; div.innerHTML = html; logEl.appendChild(div); while(logEl.children.length>400) logEl.removeChild(logEl.firstChild); logEl.scrollTop = logEl.scrollHeight; }
+function renderLog(){ logEl.innerHTML=""; for(const ev of events) if(matches(ev)) appendDom(ev.html); }
+function pushEvent(ev){ events.push(ev); if(events.length>600) events.shift(); if(matches(ev)) appendDom(ev.html); }
+
+function updateCmd(){ const inp=$("cmdInput"); if(selectedTab==="all"){ inp.disabled=true; inp.placeholder="select a host tab to send a prompt…"; } else { inp.disabled=false; inp.placeholder="prompt "+selectedTab+"…"; } }
+function selectTab(t){ selectedTab=t; localStorage.setItem("rm-tab",t); document.querySelectorAll("#tabs .tab").forEach(el=>el.classList.toggle("active", el.dataset.tab===t)); updateCmd(); renderLog(); }
+function renderTabs(hp){
+  allowedHosts = hp.allowed||[];
+  if(selectedTab!=="all" && !allowedHosts.includes(selectedTab)) selectedTab="all";
+  const key = allowedHosts.join(",")+"|"+(hp.running||[]).join(",");
+  if(key===tabsKey) return; tabsKey=key;
+  const running = new Set(hp.running||[]);
+  const tabs = ["all", ...allowedHosts];
+  $("tabs").innerHTML = tabs.map(t=>`<span class="tab ${t===selectedTab?"active":""}" data-tab="${esc(t)}">${t==="all"?"ALL":esc(t)}${t!=="all"&&running.has(t)?'<span class="ld"></span>':""}</span>`).join("");
+  document.querySelectorAll("#tabs .tab").forEach(el=>el.onclick=()=>selectTab(el.dataset.tab));
+  updateCmd();
+}
+
+async function sendCmd(){
+  if(selectedTab==="all") return;
+  const inp=$("cmdInput"), btn=$("cmdSend"); const msg=inp.value.trim(); if(!msg) return;
+  const t=new Date().toISOString().slice(11,19);
+  pushEvent({project:selectedTab, html:`<span class="muted">${t}</span> <span style="color:var(--accent)">» you → ${esc(selectedTab)}</span> ${esc(msg)}`});
+  btn.textContent="…"; inp.value="";
+  try { await fetch(`/api/host/${encodeURIComponent(selectedTab)}/prompt`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({message:msg})}); btn.textContent="send"; }
+  catch { btn.textContent="err"; setTimeout(()=>btn.textContent="send",1500); }
+}
+$("cmdSend").onclick=sendCmd; $("cmdInput").onkeydown=(e)=>{ if(e.key==="Enter") sendCmd(); };
+
 function connectStream(){
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/api/stream`);
@@ -190,18 +216,15 @@ function connectStream(){
   ws.onerror = () => ws.close();
   ws.onmessage = (e) => {
     let m; try { m = JSON.parse(e.data); } catch { return; }
-    const label = esc(m.project || m.agentId || "?");
+    const project = m.project || null;
+    const label = esc(project || m.agentId || "?");
     const t = new Date().toISOString().slice(11,19);
     const ts = `<span class="muted">${t}</span>`;
-    if (m.type === "message_complete") {
-      logLine(`${ts} <span style="color:var(--accent2)">${label} ▸</span>\n${esc(String(m.data||"").trim())}`);
-    } else if (m.type === "tool_start") {
-      const d = m.data || {}; const cmd = (d.args && d.args.command) || d.toolName || "";
-      logLine(`${ts} <span style="color:var(--accent)">🔧 ${label}</span> ${esc(String(cmd).slice(0,140))}`);
-    } else if (m.type === "status_change") {
-      const s = (m.data && m.data.status) || "";
-      if (s === "running" || s === "idle") logLine(`${ts} <span class="muted">▸ ${label} ${esc(s)}</span>`);
-    }
+    let html = null;
+    if (m.type === "message_complete") html = `${ts} <span style="color:var(--accent2)">${label} ▸</span>\n${esc(String(m.data||"").trim())}`;
+    else if (m.type === "tool_start") { const d = m.data || {}; const cmd = (d.args && d.args.command) || d.toolName || ""; html = `${ts} <span style="color:var(--accent)">🔧 ${label}</span> ${esc(String(cmd).slice(0,140))}`; }
+    else if (m.type === "status_change") { const s = (m.data && m.data.status) || ""; if (s === "running" || s === "idle") html = `${ts} <span class="muted">▸ ${label} ${esc(s)}</span>`; }
+    if (html) pushEvent({ project, html });
   };
 }
 connectStream();
