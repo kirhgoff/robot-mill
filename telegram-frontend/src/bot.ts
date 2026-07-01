@@ -8,6 +8,7 @@
 import { Telegraf } from "telegraf";
 import pino from "pino";
 import { BackendClient, type AgentInfo } from "./backend-client";
+import { HostRunnerClient } from "./host-runner-client";
 
 const TG_MAX_LEN = 4000;
 
@@ -16,6 +17,8 @@ export interface TelegramBotOptions {
 	allowedChatIds: number[];
 	backendBaseUrl: string;
 	backendWsUrl: string;
+	hostRunnerBaseUrl: string;
+	hostRunnerWsUrl: string;
 	workspace: string;
 	piProvider?: string;
 	piModel?: string;
@@ -24,8 +27,15 @@ export interface TelegramBotOptions {
 export class TelegramBot {
 	private bot: Telegraf;
 	private client: BackendClient;
+	private hostClient: HostRunnerClient;
 	private opts: TelegramBotOptions;
 	private log = pino({ name: "telegram-bot" });
+
+	/**
+	 * chatId → host project name. Presence routes the chat's prompts to the
+	 * host-runner project instead of a containerized workspace agent.
+	 */
+	private chatProject = new Map<number, string>();
 
 	/**
 	 * Maps chatId → agentId.
@@ -45,16 +55,20 @@ export class TelegramBot {
 			baseUrl: opts.backendBaseUrl,
 			wsUrl: opts.backendWsUrl,
 		});
+		this.hostClient = new HostRunnerClient({
+			baseUrl: opts.hostRunnerBaseUrl,
+			wsUrl: opts.hostRunnerWsUrl,
+		});
 
 		this.setupBotHandlers();
 		this.setupWsHandlers();
+		this.setupHostWsHandlers();
 	}
 
 	async start(): Promise<void> {
-		// Connect WebSocket to backend
 		this.client.connect();
+		this.hostClient.connect();
 
-		// Start Telegram polling
 		await this.bot.launch({ dropPendingUpdates: true });
 		this.log.info("Telegram bot running");
 	}
@@ -62,6 +76,7 @@ export class TelegramBot {
 	stop(): void {
 		this.bot.stop("shutdown");
 		this.client.disconnect();
+		this.hostClient.disconnect();
 	}
 
 	// ── Bot command handlers ─────────────────────────
@@ -108,6 +123,8 @@ export class TelegramBot {
 						"`/abort` — abort current operation",
 						"`/status` — show session info",
 						"`/system` — system-wide status",
+						"`/project <name>` — work in a host project",
+						"`/local` — back to the workspace agent",
 					].join("\n"),
 					{ parse_mode: "Markdown" },
 				);
@@ -207,10 +224,63 @@ export class TelegramBot {
 			}
 		});
 
+		this.bot.command("project", async (ctx) => {
+			if (!this.isAllowed(ctx.chat.id)) return;
+			const name = ctx.message.text.split(/\s+/)[1]?.trim();
+			let allowed: string[] = [];
+			try {
+				allowed = (await this.hostClient.listProjects()).allowed;
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : "unknown";
+				return ctx.reply(`❌ Host runner unreachable: ${msg}`);
+			}
+			if (!name) {
+				return ctx.reply(
+					[
+						"*Host projects* — send `/project <name>` to work in one:",
+						...allowed.map((p) => `• \`${p}\``),
+						"",
+						"`/local` — switch back to the workspace agent.",
+					].join("\n"),
+					{ parse_mode: "Markdown" },
+				);
+			}
+			if (!allowed.includes(name)) {
+				return ctx.reply(
+					`❌ Unknown project "${name}". Allowed: ${allowed.join(", ")}`,
+				);
+			}
+			this.chatProject.set(ctx.chat.id, name);
+			await ctx.reply(
+				`🗂️ Now working in host project *${name}*.\nSend prompts; \`/local\` to switch back.`,
+				{ parse_mode: "Markdown" },
+			);
+		});
+
+		this.bot.command("local", async (ctx) => {
+			if (!this.isAllowed(ctx.chat.id)) return;
+			if (this.chatProject.delete(ctx.chat.id)) {
+				await ctx.reply("💻 Switched back to the workspace agent.");
+			} else {
+				await ctx.reply("Already on the workspace agent.");
+			}
+		});
+
 		// ── Default: forward text to agent ───────────
 
 		this.bot.on("text", async (ctx) => {
 			if (!this.isAllowed(ctx.chat.id)) return;
+
+			const project = this.chatProject.get(ctx.chat.id);
+			if (project) {
+				try {
+					await this.hostClient.prompt(project, ctx.message.text);
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : "unknown";
+					await ctx.reply(`❌ Prompt to ${project} failed: ${msg}`);
+				}
+				return;
+			}
 
 			let agentId = this.chatAgents.get(ctx.chat.id);
 
@@ -271,6 +341,43 @@ export class TelegramBot {
 
 			this.handleAgentEvent(chatId, agentId, msg);
 		});
+	}
+
+	private setupHostWsHandlers(): void {
+		this.hostClient.on("ws:connected", () =>
+			this.log.info("Connected to host-runner"),
+		);
+		this.hostClient.on("ws:disconnected", () =>
+			this.log.warn("Host-runner WS disconnected"),
+		);
+		this.hostClient.on("ws:error", (err: Error) =>
+			this.log.error({ err }, "Host-runner WS error"),
+		);
+		this.hostClient.on("ws:message", (msg: Record<string, unknown>) => {
+			const project = msg.project as string | undefined;
+			if (!project) return;
+			for (const [chatId, targeted] of this.chatProject) {
+				if (targeted === project) this.handleHostEvent(chatId, msg);
+			}
+		});
+	}
+
+	private handleHostEvent(
+		chatId: number,
+		event: Record<string, unknown>,
+	): void {
+		const type = event.type as string;
+		if (type === "message_complete") {
+			const text = (event.data as string) || "";
+			if (text.trim()) this.sendChunked(chatId, text.trim());
+		} else if (type === "tool_start") {
+			const data = event.data as Record<string, unknown>;
+			if (data?.toolName === "bash") {
+				const cmd = (data.args as Record<string, string>)?.command ?? "...";
+				const preview = cmd.length > 80 ? `${cmd.slice(0, 80)}…` : cmd;
+				this.tg(chatId, `🔧 \`${preview}\``);
+			}
+		}
 	}
 
 	private handleAgentEvent(
