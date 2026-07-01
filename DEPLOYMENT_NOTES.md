@@ -13,9 +13,9 @@ Current deployment:
 Data layout (peeper convention):
 
 - Mutable data lives in `/home/kirhgoff/robot-mill/` (home root): `workspace/`, `pi-home/`, `agent-sessions/`, `target/`. The repo symlinks `data -> /home/kirhgoff/robot-mill`; compose bind-mounts `./data/*` into the containers. These dirs are `chmod 777` so the container `agent` user (uid 1001) can write.
-- **Env files convention:** each project keeps its `.env` as a symlink to an independent per-project file in the home root, `~/<project>.env`. E.g. `~/Projects/robot-mill/.env -> ~/robot-mill.env`, `~/Projects/eurotrip-support/.env -> ~/eurotrip-support.env`, likewise for `media-streaming` and `nightcrawler`. Edit the `~/<project>.env` file to change secrets; gitignored, host-only.
-- robot-mill's host components have their own env files in the data dir: `~/robot-mill/host-runner.env`, `~/robot-mill/linear-connector.env` (+ optional `health-monitor.env`).
-- eurotrip-support's `bun run all` also needs Google OAuth files in its repo dir (`credentials.json`, `token.json`, `token.docs.json`, `token.calendar.json`) — copied from a machine where the OAuth flow was completed (tokens can't be generated headlessly).
+- **Secrets convention:** all per-project secret files live under `~/.envs/<project>/`, and each project symlinks them from its repo. E.g. `~/Projects/robot-mill/.env -> ~/.envs/robot-mill/.env`, `~/Projects/eurotrip-support/.env -> ~/.envs/eurotrip-support/.env` (likewise `media-streaming`, `nightcrawler`). Edit files under `~/.envs/<project>/` to change secrets; host-only.
+- robot-mill's host components read `~/.envs/robot-mill/{host-runner,linear-connector,health-monitor}.env`.
+- eurotrip-support's `bun run all` also needs Google OAuth files, symlinked from the repo to `~/.envs/eurotrip-support/{credentials.json,token.json,token.docs.json,token.calendar.json}`. Drop the real files (copied from a machine where the OAuth flow was completed — tokens can't be generated headlessly) into `~/.envs/eurotrip-support/` and the repo symlinks resolve.
 
 Redeploy from another machine:
 

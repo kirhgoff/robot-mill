@@ -4,7 +4,7 @@ set -euo pipefail
 export PATH="$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 RUNNER_DIR="$(cd "$(dirname "$0")" && pwd)"
-ENV_FILE="${HEALTH_MONITOR_ENV:-$HOME/robot-mill/health-monitor.env}"
+ENV_FILE="${HEALTH_MONITOR_ENV:-$HOME/.envs/robot-mill/health-monitor.env}"
 SESSION="robot-mill-health"
 
 ENV_ARG=""
