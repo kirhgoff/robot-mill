@@ -1,7 +1,20 @@
 import type { ServerWebSocket } from "bun";
+import { spawnSync } from "node:child_process";
+import { freemem, totalmem } from "node:os";
 import { loadConfig, validateConfig } from "./config";
 import { PiSessionManager, type SessionOutput } from "./session";
 import { listSessions } from "./tmux";
+
+function diskStats(path: string): { free: number; total: number } {
+	const res = spawnSync("df", ["-kP", path], { encoding: "utf-8" });
+	const line = (res.stdout || "").trim().split("\n")[1] || "";
+	const cols = line.split(/\s+/);
+	return { total: (Number(cols[1]) || 0) * 1024, free: (Number(cols[3]) || 0) * 1024 };
+}
+
+function systemStats() {
+	return { mem: { free: freemem(), total: totalmem() }, disk: diskStats(config.projectsDir) };
+}
 
 const config = loadConfig();
 const errors = validateConfig(config);
@@ -55,6 +68,8 @@ const server = Bun.serve({
 		}
 
 		if (path === "/health_check") return json({ status: "ok" });
+
+		if (path === "/system") return json(systemStats());
 
 		if (path === "/projects" && req.method === "GET") {
 			return json({ allowed: manager.listProjects(), running: listSessions() });

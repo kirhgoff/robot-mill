@@ -30,18 +30,23 @@ export function registerConsoleRoutes(
 	});
 
 	app.get("/api/overview", async () => {
-		const [projects, health] = await Promise.all([
+		const [projects, health, hostSystem] = await Promise.all([
 			fetchJson<{ allowed: string[]; running: string[] }>(
 				`${config.hostRunnerUrl}/projects`,
 			),
 			fetchJson<{ overall: string; checks: unknown[] }>(
 				`${config.healthUrl}/health`,
 			),
+			fetchJson<{
+				mem: { free: number; total: number };
+				disk: { free: number; total: number };
+			}>(`${config.hostRunnerUrl}/system`),
 		]);
 		return {
 			agents: agentManager.listAgents(),
 			system: agentManager.getStatus(),
 			hostProjects: projects ?? { allowed: [], running: [] },
+			hostSystem: hostSystem ?? null,
 			health: health ?? { overall: "unreachable", checks: [] },
 		};
 	});
