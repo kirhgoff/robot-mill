@@ -84,6 +84,10 @@
     <div class="card"><h2>◈ host runners</h2><div id="hosts"><span class="muted blink">scanning…</span></div></div>
     <div class="card"><h2>◈ agents</h2><div id="agents"><span class="muted blink">scanning…</span></div></div>
     <div class="card"><h2>◈ system</h2><div id="system"><span class="muted blink">scanning…</span></div></div>
+    <div class="card" style="grid-column:1/-1">
+      <h2>▶ live output <span class="muted" id="streamState" style="text-transform:none;letter-spacing:0">connecting…</span></h2>
+      <pre id="log" style="max-height:320px;overflow:auto;margin:0;white-space:pre-wrap;word-break:break-word;font-size:12px"></pre>
+    </div>
   </div>
   <div class="foot" id="foot">robot-mill console · <span id="clock"></span></div>
 </div>
@@ -225,6 +229,33 @@ async function refresh(){
     <div class="row"><span class="name">host projects</span><span class="meta">${(hp.allowed||[]).length} (${(hp.running||[]).length} live)</span></div>
     <div class="row"><span class="name">components ok</span><span class="meta">${checks.filter(c=>c.status==="ok").length}/${checks.length}</span></div>`;
 }
+
+// ── Live output stream ───────────────────────────────────
+const logEl = $("log");
+function logLine(html){ const div = document.createElement("div"); div.style.marginBottom="4px"; div.innerHTML = html; logEl.appendChild(div); while(logEl.children.length>300) logEl.removeChild(logEl.firstChild); logEl.scrollTop = logEl.scrollHeight; }
+function connectStream(){
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${location.host}/api/stream`);
+  ws.onopen = () => { $("streamState").textContent = "● live"; $("streamState").style.color = "var(--ok)"; };
+  ws.onclose = () => { $("streamState").textContent = "reconnecting…"; $("streamState").style.color = "var(--warn)"; setTimeout(connectStream, 3000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    const label = esc(m.project || m.agentId || "?");
+    const t = new Date().toISOString().slice(11,19);
+    const ts = `<span class="muted">${t}</span>`;
+    if (m.type === "message_complete") {
+      logLine(`${ts} <span style="color:var(--accent2)">${label} ▸</span>\n${esc(String(m.data||"").trim())}`);
+    } else if (m.type === "tool_start") {
+      const d = m.data || {}; const cmd = (d.args && d.args.command) || d.toolName || "";
+      logLine(`${ts} <span style="color:var(--accent)">🔧 ${label}</span> ${esc(String(cmd).slice(0,140))}`);
+    } else if (m.type === "status_change") {
+      const s = (m.data && m.data.status) || "";
+      if (s === "running" || s === "idle") logLine(`${ts} <span class="muted">▸ ${label} ${esc(s)}</span>`);
+    }
+  };
+}
+connectStream();
 
 $("refresh").onclick = refresh;
 setInterval(refresh, 5000);

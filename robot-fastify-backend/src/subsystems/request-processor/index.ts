@@ -11,6 +11,7 @@ import { registerStatusRoutes } from "./routes/status";
 import { registerAgentRoutes } from "./routes/agents";
 import { registerVariationRoutes } from "./routes/variations";
 import { registerConsoleRoutes } from "./routes/console";
+import { registerConsoleStream } from "./stream";
 import { registerWebSocket } from "./websocket";
 
 export function registerRequestProcessor(
@@ -24,5 +25,6 @@ export function registerRequestProcessor(
 	registerAgentRoutes(app, agentManager);
 	registerVariationRoutes(app, variationManager);
 	registerConsoleRoutes(app, agentManager, config);
+	registerConsoleStream(app, agentManager, config);
 	registerWebSocket(app, agentManager);
 }
