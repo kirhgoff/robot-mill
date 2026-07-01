@@ -16,15 +16,12 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body {
-    background: var(--bg); color: var(--fg); font-family: var(--font);
+    color: var(--fg); font-family: var(--font);
     font-size: 14px; line-height: 1.45; overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
-  }
-  #bg { position: fixed; inset: 0; z-index: -2; width: 100%; height: 100%; display: block; }
-  #scan {
-    position: fixed; inset: 0; z-index: -1; pointer-events: none;
-    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.16) 0px, rgba(0,0,0,0.16) 1px, transparent 2px, transparent 3px);
-    mix-blend-mode: multiply; opacity: 0.5;
+    background: var(--bg);
+    background-image: radial-gradient(1100px 700px at 75% -12%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%);
+    background-attachment: fixed;
   }
   .wrap { max-width: 1100px; margin: 0 auto; padding: 16px 14px 60px; }
   header { border: 1px solid var(--line); background: rgba(17,17,29,0.7); backdrop-filter: blur(3px);
@@ -64,8 +61,6 @@
 </style>
 </head>
 <body>
-<canvas id="bg"></canvas>
-<div id="scan"></div>
 <div class="wrap">
   <header>
     <pre class="logo" id="logo"></pre>
@@ -73,7 +68,6 @@
       <span class="status-pill"><span class="dot" id="dot" style="color:var(--warn)"></span><span id="overall">booting…</span></span>
       <div class="controls">
         <select id="theme" title="theme"></select>
-        <button id="shaderToggle" title="toggle background">◼ fx</button>
         <button id="refresh" title="refresh">↻ sync</button>
       </div>
     </div>
@@ -107,12 +101,10 @@ const THEMES = {
   amber:     { "--bg":"#140c00","--panel":"#1d1401","--panel2":"#241a03","--fg":"#ffd591","--dim":"#8a6a2f","--line":"#3b2a0d","--accent":"#ffb000","--accent2":"#ff7b00","--ok":"#ffd21a","--warn":"#ff9f1a","--err":"#ff5a3c", a:[1.0,0.69,0.0], b:[1.0,0.48,0.0] },
   synthwave: { "--bg":"#160b2e","--panel":"#1e0f3d","--panel2":"#271050","--fg":"#e9d5ff","--dim":"#7c6aa8","--line":"#3a2065","--accent":"#ff6ac1","--accent2":"#6f6cff","--ok":"#4be3c4","--warn":"#ffd84b","--err":"#ff5d8f", a:[1.0,0.42,0.76], b:[0.44,0.42,1.0] },
 };
-let current = { a:[1,0.17,0.84], b:[0,0.9,1] };
 
 function applyTheme(name) {
   const t = THEMES[name] || THEMES.cyberpunk;
   for (const k in t) if (k.startsWith("--")) document.documentElement.style.setProperty(k, t[k]);
-  current = { a: t.a, b: t.b };
   document.querySelector('meta[name=theme-color]').setAttribute("content", t["--bg"]);
   localStorage.setItem("rm-theme", name);
 }
@@ -122,52 +114,6 @@ for (const name of Object.keys(THEMES)) { const o = document.createElement("opti
 themeSel.value = localStorage.getItem("rm-theme") || "cyberpunk";
 themeSel.onchange = () => applyTheme(themeSel.value);
 applyTheme(themeSel.value);
-
-// ── WebGL shader background ──────────────────────────────
-let shaderOn = localStorage.getItem("rm-fx") !== "off";
-const canvas = document.getElementById("bg");
-const gl = canvas.getContext("webgl");
-let uTime, uRes, uA, uB, raf, glReady = false;
-const FRAG = `
-precision highp float;
-uniform vec2 u_res; uniform float u_time; uniform vec3 u_a; uniform vec3 u_b;
-float grid(vec2 p, float s){ vec2 g = abs(fract(p*s)-0.5); return smoothstep(0.48,0.5,max(g.x,g.y)); }
-void main(){
-  vec2 uv = (gl_FragCoord.xy - 0.5*u_res)/u_res.y;
-  float t = u_time*0.06;
-  vec2 p = uv; p.y += 0.15;
-  float persp = 1.0/max(0.15, (0.6 - p.y));
-  vec2 gp = vec2(p.x*persp, (p.y+t)*persp);
-  float g = grid(gp, 3.0)*smoothstep(0.7,-0.2,p.y);
-  float plasma = 0.5+0.5*sin(uv.x*3.0+u_time*0.4)*cos(uv.y*3.0-u_time*0.3);
-  vec3 col = mix(u_a, u_b, plasma)*0.10;
-  col += u_a*g*0.5;
-  float vig = smoothstep(1.2,0.2,length(uv));
-  col *= vig;
-  gl_FragColor = vec4(col, 1.0);
-}`;
-const VERT = `attribute vec2 p; void main(){ gl_Position = vec4(p,0.0,1.0); }`;
-function compile(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; }
-function initGL(){
-  if (!gl) return;
-  const prog = gl.createProgram();
-  gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
-  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
-  gl.linkProgram(prog); gl.useProgram(prog);
-  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,3,-1,-1,3]), gl.STATIC_DRAW);
-  const loc = gl.getAttribLocation(prog, "p"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
-  uTime = gl.getUniformLocation(prog,"u_time"); uRes = gl.getUniformLocation(prog,"u_res");
-  uA = gl.getUniformLocation(prog,"u_a"); uB = gl.getUniformLocation(prog,"u_b");
-  glReady = true; resize(); loop(0);
-}
-function resize(){ if(!gl) return; const d = Math.min(window.devicePixelRatio||1, 1.5); canvas.width = innerWidth*d; canvas.height = innerHeight*d; gl.viewport(0,0,canvas.width,canvas.height); }
-function loop(ts){ if(!glReady||!shaderOn) return; gl.uniform1f(uTime, ts*0.001); gl.uniform2f(uRes, canvas.width, canvas.height); gl.uniform3fv(uA, current.a); gl.uniform3fv(uB, current.b); gl.drawArrays(gl.TRIANGLES,0,3); raf = requestAnimationFrame(loop); }
-addEventListener("resize", resize);
-const shaderBtn = document.getElementById("shaderToggle");
-function setFx(on){ shaderOn = on; localStorage.setItem("rm-fx", on?"on":"off"); canvas.style.display = on?"block":"none"; shaderBtn.textContent = on?"◼ fx":"◻ fx"; if(on && glReady){ cancelAnimationFrame(raf); loop(0);} }
-shaderBtn.onclick = () => setFx(!shaderOn);
-if (gl) { initGL(); setFx(shaderOn); } else { canvas.style.display="none"; }
 
 // ── Data + rendering ─────────────────────────────────────
 const $ = (id) => document.getElementById(id);
@@ -192,6 +138,8 @@ async function refresh(){
     </div></div>`).join("") : `<span class="muted">no health data (monitor offline?)</span>`;
 
   const hp = d.hostProjects || {allowed:[],running:[]};
+  const hostsBusy = $("hosts").querySelector(".promptbox.open") || $("hosts").contains(document.activeElement);
+  if (!hostsBusy) {
   $("hosts").innerHTML = (hp.allowed||[]).map(p => {
     const running = (hp.running||[]).includes(p);
     return `<div class="row host" data-project="${esc(p)}">
@@ -214,6 +162,7 @@ async function refresh(){
       catch { btn.textContent="err"; } setTimeout(()=>btn.textContent="send",1500); };
     btn.onclick = send; input.onkeydown = (e)=>{ if(e.key==="Enter") send(); };
   });
+  }
 
   const agents = d.agents || [];
   $("agents").innerHTML = agents.length ? agents.map(a => `
