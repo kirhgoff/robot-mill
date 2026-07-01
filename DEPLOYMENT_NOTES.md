@@ -6,11 +6,15 @@ Remote repo: `/home/kirhgoff/Projects/robot-mill`
 
 Current deployment:
 
-- Repository cloned to `/home/kirhgoff/Projects/robot-mill`.
-- Docker Compose started `backend` on `3100` and `web` on `3000`.
+- Repository at `/home/kirhgoff/Projects/robot-mill`.
+- Docker Compose runs `backend` (port `3100`) and `telegram` (behind the `telegram` profile). The `web` service is disabled.
 - Health check: `http://192.168.0.31:3100/health_check`.
-- Web UI: `http://192.168.0.31:3000`.
-- Remote `.env` currently has placeholder secrets. Replace `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `ALLOWED_CHAT_IDS`, and `GITHUB_TOKEN` before using the agent for real work.
+
+Data layout (peeper convention):
+
+- Mutable data lives in `/home/kirhgoff/robot-mill/` (home root): `workspace/`, `pi-home/`, `agent-sessions/`, `target/`, and `.env`.
+- The repo symlinks `data -> /home/kirhgoff/robot-mill` and `.env -> /home/kirhgoff/robot-mill/.env`. Compose bind-mounts `./data/*` into the containers.
+- These dirs are `chmod 777` so the container `agent` user (uid 1001) can write.
 
 Redeploy from another machine:
 
@@ -27,14 +31,14 @@ Redeploy another branch:
 Manual remote check:
 
 ```fish
-ssh kirhgoff@192.168.0.31 'cd /home/kirhgoff/Projects/robot-mill; docker compose ps; docker compose logs --tail=100 backend web'
+ssh kirhgoff@192.168.0.31 'cd /home/kirhgoff/Projects/robot-mill; docker compose --profile telegram ps; docker compose --profile telegram logs --tail=100 backend telegram'
 ```
 
 Telegram bot setup:
 
 1. Create a bot with `@BotFather` and put its token in remote `.env` as `TELEGRAM_BOT_TOKEN`.
 2. Get your Telegram chat id and put it in `ALLOWED_CHAT_IDS` (empty allows everyone — dev only).
-3. Set the provider key in remote `.env` matching `PI_PROVIDER` (`ANTHROPIC_API_KEY` must always be present so config validation passes; `OPENROUTER_API_KEY` is used when `PI_PROVIDER=openrouter`).
+3. Set the provider key in remote `.env` matching `PI_PROVIDER` — startup validation only requires the selected provider's key (`anthropic`→`ANTHROPIC_API_KEY`, `openrouter`→`OPENROUTER_API_KEY`, `openai`→`OPENAI_API_KEY`).
 4. The `telegram` service lives behind the `telegram` Compose profile — deploy with the flag below to start it.
 5. Send `/start` to the bot, then send normal prompts.
 
@@ -53,4 +57,4 @@ Notes:
 
 - `.env` is gitignored and is NOT managed by the deploy script. Set secrets directly in the remote `.env`; they persist across deploys.
 - The container entrypoint runs the Compose `command:` for each service (`install/50-entrypoint.sh`). It previously hijacked any service that had `TELEGRAM_BOT_TOKEN` set to run a removed `bot/bot.js`; that branch was removed.
-- The `pi-home` named volume (`/home/agent/.pi`) must be owned by `agent` (uid 1001) or `pi` fails with `EACCES`.
+- The pi home dir (`/home/agent/.pi`, bind-mounted from `data/pi-home`) must be writable by `agent` (uid 1001) or `pi` fails with `EACCES`; the deploy script `chmod 777`s the data dirs.
