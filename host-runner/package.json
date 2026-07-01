@@ -1,0 +1,15 @@
+{
+  "name": "host-runner",
+  "version": "1.0.0",
+  "description": "Runs pi agents in host tmux sessions against real projects, exposed over HTTP+WS",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "bun-types": "^1.3.14",
+    "typescript": "^6.0.3"
+  }
+}
