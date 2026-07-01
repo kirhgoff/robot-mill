@@ -5,7 +5,9 @@
  */
 
 import { EventEmitter } from "node:events";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { nanoid } from "nanoid";
 import { type Config, apiKeyEnvForProvider } from "../../config";
 import type {
@@ -145,6 +147,33 @@ export class AgentManager extends EventEmitter {
 		} catch {
 			return [];
 		}
+	}
+
+	cloneRepo(repo: string): { name: string; path: string } {
+		const slug = repo
+			.replace(/^git@github\.com:/, "")
+			.replace(/^https?:\/\/github\.com\//, "")
+			.replace(/\.git$/, "")
+			.replace(/^\/+|\/+$/g, "");
+		if (!/^[\w.-]+\/[\w.-]+$/.test(slug)) {
+			throw new Error(`invalid repo "${repo}" (expected owner/name)`);
+		}
+		const name = slug.split("/")[1];
+		const dest = join(this.config.workspace, name);
+		const run = (args: string[], cwd?: string) => {
+			const res = spawnSync("git", args, { cwd, encoding: "utf-8" });
+			if (res.status !== 0) {
+				throw new Error(
+					`git ${args[0]} failed: ${(res.stderr || res.stdout || "").trim()}`,
+				);
+			}
+		};
+		if (existsSync(join(dest, ".git"))) {
+			run(["pull", "--ff-only"], dest);
+		} else {
+			run(["clone", `https://github.com/${slug}.git`, dest]);
+		}
+		return { name, path: dest };
 	}
 
 	private getAgent(agentId: string): PiAgent {

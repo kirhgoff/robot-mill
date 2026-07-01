@@ -86,6 +86,10 @@ export class BackendClient extends EventEmitter {
 		return this.post("/agents", request);
 	}
 
+	async cloneRepo(repo: string): Promise<{ name: string; path: string }> {
+		return this.post("/repos", { repo });
+	}
+
 	async promptAgent(
 		agentId: string,
 		message: string,

@@ -97,6 +97,9 @@ it. See `DEPLOYMENT_NOTES.md` for the full remote setup.
 | `/abort` | Abort the current pi operation |
 | `/status` | Show this chat's session state |
 | `/system` | System-wide status (all agents) |
+| `/project <name>` | Work in a real host project (via host-runner) |
+| `/repo <owner/name>` | Clone a GitHub repo into the workspace and work in it |
+| `/local` | Switch back to the containerized workspace agent |
 
 Any other message is forwarded to pi as a prompt.
 

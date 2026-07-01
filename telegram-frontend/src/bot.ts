@@ -124,6 +124,7 @@ export class TelegramBot {
 						"`/status` — show session info",
 						"`/system` — system-wide status",
 						"`/project <name>` — work in a host project",
+						"`/repo <owner/name>` — clone a repo and work in it",
 						"`/local` — back to the workspace agent",
 					].join("\n"),
 					{ parse_mode: "Markdown" },
@@ -263,6 +264,55 @@ export class TelegramBot {
 				await ctx.reply("💻 Switched back to the workspace agent.");
 			} else {
 				await ctx.reply("Already on the workspace agent.");
+			}
+		});
+
+		this.bot.command("repo", async (ctx) => {
+			if (!this.isAllowed(ctx.chat.id)) return;
+			const arg = ctx.message.text.split(/\s+/)[1]?.trim();
+			if (!arg) {
+				return ctx.reply("Usage: `/repo owner/name`", {
+					parse_mode: "Markdown",
+				});
+			}
+			await ctx.reply(`📦 Cloning \`${arg}\`…`, { parse_mode: "Markdown" });
+
+			let cloned: { name: string; path: string };
+			try {
+				cloned = await this.client.cloneRepo(arg);
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : "unknown";
+				return ctx.reply(`❌ Clone failed: ${msg}`);
+			}
+
+			this.chatProject.delete(ctx.chat.id);
+			const existingId = this.chatAgents.get(ctx.chat.id);
+			if (existingId) {
+				try {
+					await this.client.killAgent(existingId);
+				} catch {
+					// ignore
+				}
+			}
+
+			try {
+				const agent = await this.client.spawnAgent({
+					name: `tg-${ctx.chat.id}`,
+					cwd: cloned.path,
+					provider: this.opts.piProvider,
+					model: this.opts.piModel,
+					sessionId: `tg-${ctx.chat.id}`,
+					resumeSession: false,
+				});
+				this.chatAgents.set(ctx.chat.id, agent.id);
+				this.client.subscribe(agent.id);
+				await ctx.reply(
+					`✅ Working in *${cloned.name}*. Send prompts — the agent can branch, commit, and open PRs.`,
+					{ parse_mode: "Markdown" },
+				);
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : "unknown";
+				await ctx.reply(`❌ Failed to start agent: ${msg}`);
 			}
 		});
 

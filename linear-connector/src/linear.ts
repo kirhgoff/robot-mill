@@ -6,6 +6,7 @@ export interface LinearIssue {
 	title: string;
 	description: string;
 	labels: string[];
+	project: string | null;
 }
 
 export interface TeamInfo {
@@ -76,6 +77,7 @@ export class LinearClient {
 						title: string;
 						description: string | null;
 						labels: { nodes: { name: string }[] };
+						project: { name: string } | null;
 					}[];
 				};
 			};
@@ -83,7 +85,7 @@ export class LinearClient {
 			`query($id: String!) {
 				workflowState(id: $id) {
 					issues {
-						nodes { id identifier title description labels { nodes { name } } }
+						nodes { id identifier title description labels { nodes { name } } project { name } }
 					}
 				}
 			}`,
@@ -95,6 +97,7 @@ export class LinearClient {
 			title: n.title,
 			description: n.description ?? "",
 			labels: n.labels.nodes.map((l) => l.name),
+			project: n.project?.name ?? null,
 		}));
 	}
 
