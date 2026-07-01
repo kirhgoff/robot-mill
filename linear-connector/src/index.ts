@@ -34,29 +34,54 @@ function connectHostRunner(): void {
 	ws.onerror = () => ws.close();
 }
 
-async function runOnHostRunner(project: string, task: string): Promise<string> {
+function taskId(project: string, branch: string): string {
+	return `${project}-${branch.replace(/\//g, "-")}`;
+}
+
+function branchFor(identifier: string): string {
+	return identifier.toLowerCase();
+}
+
+async function runTaskOnHostRunner(
+	project: string,
+	branch: string,
+	task: string,
+): Promise<string> {
+	const key = taskId(project, branch);
 	const completion = new Promise<string>((resolve, reject) => {
 		const timer = setTimeout(() => {
-			pendingCompletion.delete(project);
+			pendingCompletion.delete(key);
 			reject(new Error("agent timed out"));
 		}, config.promptTimeoutMs);
-		pendingCompletion.set(project, (text) => {
+		pendingCompletion.set(key, (text) => {
 			clearTimeout(timer);
-			pendingCompletion.delete(project);
+			pendingCompletion.delete(key);
 			resolve(text);
 		});
 	});
 
-	const res = await fetch(`${config.hostRunnerUrl}/projects/${encodeURIComponent(project)}/prompt`, {
+	const res = await fetch(`${config.hostRunnerUrl}/projects/${encodeURIComponent(project)}/task`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ message: task }),
+		body: JSON.stringify({ message: task, branch }),
 	});
 	if (!res.ok) {
-		pendingCompletion.delete(project);
-		throw new Error(`host-runner prompt failed (${res.status})`);
+		pendingCompletion.delete(key);
+		throw new Error(`host-runner task failed (${res.status})`);
 	}
 	return completion;
+}
+
+async function cleanupTask(project: string, branch: string): Promise<void> {
+	try {
+		await fetch(`${config.hostRunnerUrl}/projects/${encodeURIComponent(project)}/task`, {
+			method: "DELETE",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branch }),
+		});
+	} catch {
+		// best-effort; the branch is already pushed
+	}
 }
 
 function pickTarget(issue: { project: string | null; labels: string[] }): string | undefined {
@@ -86,22 +111,29 @@ async function processIssue(
 		return;
 	}
 
+	const branch = branchFor(issue.identifier);
 	await linear.moveIssue(issue.id, inProgressId);
-	await linear.comment(issue.id, `🤖 Agent started in \`${target}\`.`);
-	console.log(`[${issue.identifier}] -> ${target}: ${issue.title}`);
+	await linear.comment(issue.id, `🤖 Agent started in \`${target}\` on branch \`${branch}\`.`);
+	console.log(`[${issue.identifier}] -> ${target} (${branch}): ${issue.title}`);
 
 	const task = [
 		`Linear issue ${issue.identifier}: ${issue.title}`,
 		"",
 		issue.description || "(no description)",
 		"",
-		"Work on this in the current project. When finished, summarize what you changed and any follow-ups.",
+		`You are in a dedicated git worktree on a new branch \`${branch}\` — not on the main branch.`,
+		"Implement the change here, then commit it and push the branch:",
+		`  git push -u origin ${branch}`,
+		"Then open a pull request against the default branch: use `gh pr create` if available,",
+		"otherwise create it via the GitHub REST API using the $GITHUB_TOKEN environment variable.",
+		"When finished, summarize what you changed and include the pull request URL.",
 	].join("\n");
 
 	try {
-		const result = await runOnHostRunner(target, task);
+		const result = await runTaskOnHostRunner(target, branch, task);
 		await linear.comment(issue.id, result || "(agent produced no text output)");
 		await linear.moveIssue(issue.id, reviewId);
+		await cleanupTask(target, branch);
 		console.log(`[${issue.identifier}] done -> In Review`);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : "unknown error";

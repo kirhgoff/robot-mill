@@ -259,6 +259,11 @@ Polls a Linear status column and dispatches issues to agents.
   and label it with a target host project (e.g. `media-streaming`). The connector
   moves it to **In Progress**, runs the agent with the issue as its task, comments
   the result, and moves it to **In Review**.
+- Each issue runs in its own **git worktree** on a branch named after the issue
+  identifier (e.g. `kir-123`), created via the host-runner `/projects/:project/task`
+  endpoint — so ticket work never touches the project's main checkout. The agent is
+  asked to commit, push the branch, and open a pull request; the worktree is removed
+  once the run finishes. Interactive console prompts still run on the main checkout.
 - Start: `linear-connector/start.sh` (tmux session `robot-mill-linear`).
 
 ## Local development

@@ -4,6 +4,7 @@ import { freemem, totalmem } from "node:os";
 import { loadConfig, validateConfig } from "./config";
 import { PiSessionManager, type SessionOutput } from "./session";
 import { listSessions } from "./tmux";
+import { taskId } from "./worktree";
 
 function diskStats(path: string): { free: number; total: number } {
 	const res = spawnSync("df", ["-kP", path], { encoding: "utf-8" });
@@ -92,11 +93,29 @@ const server = Bun.serve({
 					session.prompt(message);
 					return json({ ok: true });
 				}
-				if (req.method === "POST" && action === "/abort") {
-					const session = await manager.get(project);
-					session.abort();
-					return json({ ok: true });
-				}
+					if (req.method === "POST" && action === "/task") {
+						const body = await readBody(req);
+						const message = body.message as string | undefined;
+						const branch = body.branch as string | undefined;
+						if (!message || !branch) {
+							return json({ error: "message and branch are required" }, 400);
+						}
+						const session = await manager.getTask(project, branch);
+						session.prompt(message);
+						return json({ ok: true, sessionKey: taskId(project, branch) });
+					}
+					if (req.method === "DELETE" && action === "/task") {
+						const body = await readBody(req);
+						const branch = body.branch as string | undefined;
+						if (!branch) return json({ error: "branch is required" }, 400);
+						manager.killTask(project, branch);
+						return json({ ok: true });
+					}
+					if (req.method === "POST" && action === "/abort") {
+						const session = await manager.get(project);
+						session.abort();
+						return json({ ok: true });
+					}
 				if (req.method === "POST" && action === "/new-session") {
 					const session = await manager.get(project);
 					session.newConversation();
