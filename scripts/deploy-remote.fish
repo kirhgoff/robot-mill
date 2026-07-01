@@ -5,6 +5,7 @@ set remote_host 192.168.0.31
 set remote_name peeper
 set remote_repo /home/kirhgoff/Projects/robot-mill
 set branch main
+set profiles
 set compose_prefix ""
 
 if test (hostname -s) = $remote_name
@@ -15,10 +16,16 @@ end
 for arg in $argv
     switch $arg
         case --telegram
-            set compose_prefix "COMPOSE_PROFILES=telegram"
+            set -a profiles telegram
+        case --discord
+            set -a profiles discord
         case '*'
             set branch $arg
     end
+end
+
+if test (count $profiles) -gt 0
+    set compose_prefix "COMPOSE_PROFILES="(string join , $profiles)
 end
 
 ssh $remote_user@$remote_host "set -e; cd $remote_repo; git fetch origin; git checkout $branch; git pull --ff-only origin $branch; mkdir -p data/workspace data/pi-home data/agent-sessions data/target; chmod 777 data/workspace data/pi-home data/agent-sessions data/target; $compose_prefix docker compose up --build -d; docker compose ps; curl -fsS http://127.0.0.1:3100/health_check"
