@@ -21,4 +21,4 @@ for arg in $argv
     end
 end
 
-ssh $remote_user@$remote_host "set -e; cd $remote_repo; git fetch origin; git checkout $branch; git pull --ff-only origin $branch; mkdir -p data/workspace data/pi-home data/agent-sessions data/target; chmod -R 777 data; $compose_prefix docker compose up --build -d; docker compose ps; curl -fsS http://127.0.0.1:3100/health_check"
+ssh $remote_user@$remote_host "set -e; cd $remote_repo; git fetch origin; git checkout $branch; git pull --ff-only origin $branch; mkdir -p data/workspace data/pi-home data/agent-sessions data/target; chmod 777 data/workspace data/pi-home data/agent-sessions data/target; $compose_prefix docker compose up --build -d; docker compose ps; curl -fsS http://127.0.0.1:3100/health_check"
