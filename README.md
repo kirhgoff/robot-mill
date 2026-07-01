@@ -36,6 +36,7 @@ robot-mill/
 │   └── 50-entrypoint.sh       writes /home/agent/entrypoint.sh (runs the compose command)
 ├── robot-fastify-backend/     agent orchestration server (containerized, /workspace)
 ├── telegram-frontend/         Telegram bot
+├── discord-frontend/          Discord bot (same commands, behind `discord` profile)
 ├── host-runner/               pi agents in host tmux sessions on real projects
 ├── linear-connector/          dispatches Linear issues to agents
 ├── web-variations-frontend/   experimental UI (disabled)
@@ -132,6 +133,29 @@ repo - Clone and work in a repo: /repo <owner/name>
 local - Back to the workspace agent
 status - Show this chat's session state
 system - System-wide status of all agents
+```
+
+## Discord frontend
+
+Same capabilities as the Telegram bot, exposed in Discord. Commands use a prefix
+(default `!` — e.g. `!start`, `!project media-streaming`, `!repo owner/name`);
+any other message is forwarded to the active agent as a prompt. One agent per
+Discord channel.
+
+Setup:
+
+1. Create an application + bot at <https://discord.com/developers/applications>,
+   copy its token into `DISCORD_BOT_TOKEN`.
+2. Enable **Message Content Intent** (Bot → Privileged Gateway Intents) so the bot
+   can read messages.
+3. Invite the bot to your server with the *Send Messages* / *Read Message History*
+   permissions.
+4. Optionally set `ALLOWED_CHANNEL_IDS` (comma-separated channel IDs; empty = all).
+5. Deploy with the discord profile (flags combine):
+
+```fish
+./scripts/deploy-remote.fish --discord              # discord only
+./scripts/deploy-remote.fish --telegram --discord   # both bots
 ```
 
 ## Host runner — agents on real host projects
