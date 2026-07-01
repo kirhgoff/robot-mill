@@ -30,7 +30,6 @@ export function registerAgentRoutes(
 		try {
 			const info = agentManager.spawn({
 				name: body.name as string,
-				runtime: (body.runtime as "pi" | "custom") ?? "pi",
 				cwd: body.cwd as string | undefined,
 				provider: body.provider as string | undefined,
 				model: body.model as string | undefined,

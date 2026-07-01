@@ -6,4 +6,4 @@ curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
 rm -rf /var/lib/apt/lists/*
 
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @mariozechner/pi-coding-agent@0.73.1

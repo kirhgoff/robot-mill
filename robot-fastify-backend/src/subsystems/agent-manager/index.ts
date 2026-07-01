@@ -7,7 +7,7 @@
 import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { nanoid } from "nanoid";
-import type { Config } from "../../config";
+import { type Config, apiKeyEnvForProvider } from "../../config";
 import type {
 	AgentInfo,
 	AgentOutput,
@@ -40,19 +40,21 @@ export class AgentManager extends EventEmitter {
 			throw new Error(`Agent with id "${id}" already exists`);
 		}
 
+		const provider = request.provider || this.config.piProvider;
+		const keyEnv = apiKeyEnvForProvider(provider);
+		const apiKey = keyEnv ? this.config.apiKeys[keyEnv] : undefined;
+
 		const options: PiAgentOptions = {
 			id,
 			name: request.name,
 			cwd,
 			sessionDir: this.config.sessionStorage,
-			provider: request.provider || this.config.piProvider,
+			provider,
 			model: request.model || this.config.piModel || undefined,
 			tools: request.tools,
 			systemPrompt: request.systemPrompt,
 			resumeSession: request.resumeSession,
-			env: this.config.anthropicApiKey
-				? { ANTHROPIC_API_KEY: this.config.anthropicApiKey }
-				: undefined,
+			env: keyEnv && apiKey ? { [keyEnv]: apiKey } : undefined,
 		};
 
 		const agent = new PiAgent(options);
