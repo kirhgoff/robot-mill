@@ -39,6 +39,12 @@ export interface Config {
 	piModel: string;
 	/** Env-var-name → value for every known provider key that is set. */
 	apiKeys: Record<string, string>;
+	/** Host-runner base URL (for the console aggregation/proxy) */
+	hostRunnerUrl: string;
+	/** Health-monitor base URL (for the console) */
+	healthUrl: string;
+	/** Directory containing the web console's static files */
+	consoleDir: string;
 	/** Log level */
 	logLevel: string;
 }
@@ -69,6 +75,9 @@ function productionConfig(): Config {
 		piProvider: env("PI_PROVIDER", "anthropic"),
 		piModel: env("PI_MODEL"),
 		apiKeys: collectApiKeys(),
+		hostRunnerUrl: env("HOST_RUNNER_URL", "http://host.docker.internal:3200"),
+		healthUrl: env("HEALTH_URL", "http://host.docker.internal:3300"),
+		consoleDir: env("WEB_CONSOLE_DIR", "/home/agent/web-console"),
 		logLevel: env("LOG_LEVEL", "info"),
 	};
 }
@@ -86,6 +95,9 @@ function developmentConfig(): Config {
 		piProvider: env("PI_PROVIDER", "anthropic"),
 		piModel: env("PI_MODEL"),
 		apiKeys: collectApiKeys(),
+		hostRunnerUrl: env("HOST_RUNNER_URL", "http://127.0.0.1:3200"),
+		healthUrl: env("HEALTH_URL", "http://127.0.0.1:3300"),
+		consoleDir: env("WEB_CONSOLE_DIR", resolve(PROJECT_ROOT, "../web-console")),
 		logLevel: env("LOG_LEVEL", "debug"),
 	};
 }
