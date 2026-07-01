@@ -19,7 +19,7 @@ export function registerConsoleRoutes(
 	agentManager: AgentManager,
 	config: Config,
 ) {
-	app.get("/console", async (_req, reply) => {
+	const serveConsole = (_req: unknown, reply: import("fastify").FastifyReply) => {
 		const file = join(config.consoleDir, "index.html");
 		if (!existsSync(file)) {
 			return reply.status(404).send("web console not found");
@@ -27,7 +27,12 @@ export function registerConsoleRoutes(
 		return reply
 			.header("content-type", "text/html; charset=utf-8")
 			.send(readFileSync(file, "utf-8"));
-	});
+	};
+
+	// Homepage: the console (with the Poop House view selected by default)
+	// lives at the site root as well as /console.
+	app.get("/", serveConsole);
+	app.get("/console", serveConsole);
 
 	app.get("/api/overview", async () => {
 		const [projects, health, hostSystem] = await Promise.all([

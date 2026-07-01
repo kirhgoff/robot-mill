@@ -40,7 +40,7 @@ robot-mill/
 ├── host-runner/               pi agents in host tmux sessions on real projects
 ├── linear-connector/          dispatches Linear issues to agents
 ├── health-monitor/            scheduled health checks via host agents
-├── web-console/               dark cyberpunk management UI (served by backend at /console)
+├── web-console/               homepage: poop house dashboard + robot-mill console (served at / and /console)
 ├── web-variations-frontend/   experimental UI (disabled)
 ├── scripts/deploy-remote.fish redeploy to the peeper box
 └── DEPLOYMENT_NOTES.md
@@ -183,13 +183,23 @@ Setup:
 ./scripts/deploy-remote.fish --telegram --discord   # both bots
 ```
 
-## Web console
+## Web console + homepage
 
-A dark, cyberpunk management UI served by the backend at
-**`http://<host>:3100/console`** (mobile-friendly). It shows components/health,
-host runners (with a per-project prompt box), container agents, and system status,
-auto-refreshing every 5s. Features a WebGL shader background (toggleable), ASCII
-banner, and switchable themes (cyberpunk / matrix / amber / synthwave).
+A mobile-friendly UI served by the backend at the **site root** — both
+**`http://<host>/`** and **`http://<host>:3100/console`**. It has two title
+tabs in the header:
+
+- **poop house** (selected by default) — a happy dashboard of links to all
+  media-streaming services (Jellyfin, Jellyseerr, Sonarr, Radarr, etc.). This
+  replaces the old media-streaming `portal` container, which has been removed.
+- **robot mill** — the dark cyberpunk management view: components/health, host
+  runners (with a per-project prompt box), container agents, and system status,
+  auto-refreshing every 5s, with switchable themes (cyberpunk / matrix / amber /
+  synthwave).
+
+The inactive title tab is dimmed but tappable to switch views; the selection is
+remembered in `localStorage`. The homepage is exposed on port 80 via
+`HOMEPAGE_PORT` in `docker-compose.yml`.
 
 The browser only talks to the backend (same origin); the backend aggregates and
 proxies to the host-runner and health-monitor via `/api/overview` and
