@@ -89,19 +89,50 @@ it. See `DEPLOYMENT_NOTES.md` for the full remote setup.
 
 ## Bot commands
 
+Any message that isn't a command is forwarded to the active agent as a prompt.
+Each chat has one active target: the containerized workspace agent by default, or
+a host project (`/project`) / cloned repo (`/repo`).
+
+**Session control**
+
 | Command | Description |
 |---------|-------------|
-| `/start` | Start a new pi session (kills any existing one) |
-| `/stop` | End the session |
-| `/new` | Fresh conversation, same pi process (resets context) |
-| `/abort` | Abort the current pi operation |
-| `/status` | Show this chat's session state |
-| `/system` | System-wide status (all agents) |
-| `/project <name>` | Work in a real host project (via host-runner) |
-| `/repo <owner/name>` | Clone a GitHub repo into the workspace and work in it |
-| `/local` | Switch back to the containerized workspace agent |
+| `/start` | Start a new workspace agent for this chat (kills any existing one) |
+| `/stop` | End the chat's session |
+| `/new` | Reset the conversation but keep the same pi process (clears context) |
+| `/abort` | Abort the operation the agent is currently running |
 
-Any other message is forwarded to pi as a prompt.
+**Choosing where the agent works**
+
+| Command | Description |
+|---------|-------------|
+| `/project <name>` | Route this chat to a real host project via the host-runner (e.g. `/project media-streaming` — then "restart the sonarr container"). Full host access. |
+| `/repo <owner/name>` | Clone a GitHub repo into the workspace and work in it (e.g. `/repo kirhgoff/eurotrip-support`). The agent can branch, commit, and open PRs. |
+| `/local` | Switch back to the default containerized workspace agent |
+
+**Info**
+
+| Command | Description |
+|---------|-------------|
+| `/status` | Show this chat's session state (agent id, workdir) |
+| `/system` | System-wide status: all running agents and what they're doing |
+
+### Register with BotFather
+
+Paste this into `@BotFather` → `/setcommands` so the commands appear in Telegram's
+command menu:
+
+```
+start - Start a new workspace agent (kills current)
+stop - End the session
+new - Reset conversation, keep the process
+abort - Abort the current operation
+project - Work in a host project: /project <name>
+repo - Clone and work in a repo: /repo <owner/name>
+local - Back to the workspace agent
+status - Show this chat's session state
+system - System-wide status of all agents
+```
 
 ## Host runner — agents on real host projects
 
