@@ -54,9 +54,9 @@
   .tab:hover { color: var(--accent); border-color: var(--accent); }
   .tab.active { color: var(--bg); background: var(--accent); border-color: var(--accent); font-weight: 700; }
   .tab .ld { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 6px var(--ok); }
-  .cmd { display: flex; gap: 6px; margin-bottom: 10px; }
-  .cmd input { flex: 1; font-family: var(--font); font-size: 12px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); padding: 7px 9px; }
-  .cmd input:disabled { opacity: 0.45; }
+  .cmd { display: flex; gap: 6px; margin-bottom: 10px; align-items: flex-end; }
+  .cmd textarea { flex: 1; font-family: var(--font); font-size: 12px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); padding: 7px 9px; resize: none; overflow-y: auto; max-height: 140px; line-height: 1.4; }
+  .cmd textarea:disabled { opacity: 0.45; }
   .meter { height: 6px; background: var(--panel2); border: 1px solid var(--line); border-radius: 2px; overflow: hidden; margin-top: 4px; }
   .meter > span { display: block; height: 100%; background: var(--accent); }
   .muted { color: var(--dim); }
@@ -86,7 +86,7 @@
       <h2>▶ live output <span class="muted" id="streamState" style="text-transform:none;letter-spacing:0">connecting…</span></h2>
       <div class="tabs" id="tabs"></div>
       <div class="cmd">
-        <input id="cmdInput" placeholder="select a host tab to send a prompt…" disabled autocomplete="off" />
+        <textarea id="cmdInput" rows="1" placeholder="select a host tab to send a prompt…" disabled autocomplete="off"></textarea>
         <button id="cmdSend">send</button>
       </div>
       <pre id="log" style="max-height:360px;overflow:auto;margin:0;white-space:pre-wrap;word-break:break-word;font-size:12px"></pre>
@@ -179,7 +179,7 @@ let tabsKey = "";
 let allowedHosts = [];
 
 function matches(ev){ return selectedTab === "all" || ev.project === selectedTab; }
-function appendDom(html){ const div = document.createElement("div"); div.style.marginBottom="4px"; div.innerHTML = html; logEl.appendChild(div); while(logEl.children.length>400) logEl.removeChild(logEl.firstChild); logEl.scrollTop = logEl.scrollHeight; }
+function appendDom(html){ const div = document.createElement("div"); div.style.marginBottom="4px"; div.innerHTML = html; logEl.insertBefore(div, logEl.firstChild); while(logEl.children.length>400) logEl.removeChild(logEl.lastChild); logEl.scrollTop = 0; }
 function renderLog(){ logEl.innerHTML=""; for(const ev of events) if(matches(ev)) appendDom(ev.html); }
 function pushEvent(ev){ events.push(ev); if(events.length>600) events.shift(); if(matches(ev)) appendDom(ev.html); }
 
@@ -202,11 +202,15 @@ async function sendCmd(){
   const inp=$("cmdInput"), btn=$("cmdSend"); const msg=inp.value.trim(); if(!msg) return;
   const t=new Date().toISOString().slice(11,19);
   pushEvent({project:selectedTab, html:`<span class="muted">${t}</span> <span style="color:var(--accent)">» you → ${esc(selectedTab)}</span> ${esc(msg)}`});
-  btn.textContent="…"; inp.value="";
+  btn.textContent="…"; inp.value=""; autoGrow();
   try { await fetch(`/api/host/${encodeURIComponent(selectedTab)}/prompt`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({message:msg})}); btn.textContent="send"; }
   catch { btn.textContent="err"; setTimeout(()=>btn.textContent="send",1500); }
 }
-$("cmdSend").onclick=sendCmd; $("cmdInput").onkeydown=(e)=>{ if(e.key==="Enter") sendCmd(); };
+const cmdInput = $("cmdInput");
+function autoGrow(){ cmdInput.style.height="auto"; cmdInput.style.height=Math.min(cmdInput.scrollHeight,140)+"px"; }
+cmdInput.addEventListener("input", autoGrow);
+$("cmdSend").onclick=sendCmd;
+cmdInput.onkeydown=(e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendCmd(); } };
 
 function connectStream(){
   const proto = location.protocol === "https:" ? "wss" : "ws";
