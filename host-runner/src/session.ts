@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "./config";
 import { hasSession, killSession, newSession } from "./tmux";
+import { ensureWorktree, removeWorktree, taskId, worktreePath } from "./worktree";
 
 const bunPath = process.execPath;
 const bridgePath = join(import.meta.dir, "bridge.ts");
@@ -236,15 +237,33 @@ export class PiSessionManager extends EventEmitter {
 	}
 
 	async get(project: string): Promise<PiSession> {
-		let session = this.sessions.get(project);
+		return this.ensureSession(project, join(this.config.projectsDir, project));
+	}
+
+	async getTask(project: string, branch: string): Promise<PiSession> {
+		const baseDir = join(this.config.projectsDir, project);
+		const dir = worktreePath(this.config.projectsDir, project, branch);
+		ensureWorktree(baseDir, dir, branch);
+		return this.ensureSession(taskId(project, branch), dir);
+	}
+
+	killTask(project: string, branch: string): void {
+		this.kill(taskId(project, branch));
+		removeWorktree(
+			join(this.config.projectsDir, project),
+			worktreePath(this.config.projectsDir, project, branch),
+		);
+	}
+
+	private async ensureSession(key: string, dir: string): Promise<PiSession> {
+		let session = this.sessions.get(key);
 		if (!session) {
-			const dir = join(this.config.projectsDir, project);
-			session = new PiSession(project, dir, this.config);
+			session = new PiSession(key, dir, this.config);
 			session.on("output", (output: SessionOutput) => this.emit("output", output));
 			session.on("message_complete", (text: string) =>
-				this.emit("message_complete", { project, text }),
+				this.emit("message_complete", { project: key, text }),
 			);
-			this.sessions.set(project, session);
+			this.sessions.set(key, session);
 		}
 		await session.ensure();
 		return session;
