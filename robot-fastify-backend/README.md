@@ -1,6 +1,6 @@
 # robot-fastify-backend
 
-Agent orchestration server built with [Fastify](https://fastify.dev). Spawns and manages [pi](https://github.com/mariozechner/pi-coding-agent) coding agents, exposes them over REST and WebSocket so any frontend (Telegram, WhatsApp, custom UI) can interact with them.
+Agent orchestration server built with [Fastify](https://fastify.dev). Spawns and manages [pi](https://github.com/badlogic/pi-mono) coding agents, exposes them over REST and WebSocket so any frontend (Telegram, WhatsApp, custom UI) can interact with them.
 
 ## Architecture
 
