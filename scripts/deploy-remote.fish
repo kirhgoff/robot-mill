@@ -19,6 +19,8 @@ for arg in $argv
             set -a profiles telegram
         case --discord
             set -a profiles discord
+        case --web
+            set -a profiles web
         case '*'
             set branch $arg
     end
