@@ -33,6 +33,9 @@ RUN cd /home/agent/discord-frontend && bun install --production
 COPY --chown=agent:agent discord-frontend/src/ /home/agent/discord-frontend/src/
 COPY --chown=agent:agent discord-frontend/tsconfig.json /home/agent/discord-frontend/
 
+# ── Layer 3c: Web console (static, served by the backend) ─────────────────────
+COPY --chown=agent:agent web-console/ /home/agent/web-console/
+
 # ── Layer 4: Session storage directory ────────────────────────────────────────
 RUN mkdir -p /data/agent-sessions && chown agent:agent /data/agent-sessions
 

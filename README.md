@@ -40,6 +40,7 @@ robot-mill/
 ├── host-runner/               pi agents in host tmux sessions on real projects
 ├── linear-connector/          dispatches Linear issues to agents
 ├── health-monitor/            scheduled health checks via host agents
+├── web-console/               dark cyberpunk management UI (served by backend at /console)
 ├── web-variations-frontend/   experimental UI (disabled)
 ├── scripts/deploy-remote.fish redeploy to the peeper box
 └── DEPLOYMENT_NOTES.md
@@ -182,6 +183,19 @@ Setup:
 ./scripts/deploy-remote.fish --telegram --discord   # both bots
 ```
 
+## Web console
+
+A dark, cyberpunk management UI served by the backend at
+**`http://<host>:3100/console`** (mobile-friendly). It shows components/health,
+host runners (with a per-project prompt box), container agents, and system status,
+auto-refreshing every 5s. Features a WebGL shader background (toggleable), ASCII
+banner, and switchable themes (cyberpunk / matrix / amber / synthwave).
+
+The browser only talks to the backend (same origin); the backend aggregates and
+proxies to the host-runner and health-monitor via `/api/overview` and
+`/api/host/:project/prompt`. It's a static single file (`web-console/index.html`) —
+no build step — baked into the image.
+
 ## Host runner — agents on real host projects
 
 The backend runs agents inside the container in an isolated `/workspace`. The
@@ -202,11 +216,13 @@ port), so the Telegram *container* reaching it via `host.docker.internal:3200` i
 subject to `ufw`. Allow the docker bridge subnets once:
 
 ```sh
-sudo ufw allow from 172.16.0.0/12 to any port 3200 proto tcp
+sudo ufw allow from 172.16.0.0/12 to any port 3200:3300 proto tcp
 ```
 
-(The linear-connector runs on the host and reaches the host-runner over loopback,
-so it needs no firewall change.)
+This covers the host-runner (`3200`) and the health-monitor (`3300`), both of which
+containers (telegram/discord/backend) reach via `host.docker.internal`. The
+linear-connector and health-monitor themselves run on the host and reach the
+host-runner over loopback, so they need no firewall change.
 
 ## Health monitor
 

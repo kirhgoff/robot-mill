@@ -45,7 +45,7 @@ async function main() {
 	// ── Subsystems ─────────────────────────────────
 	const agentManager = new AgentManager(config);
 	const variationManager = new VariationManager(config, agentManager);
-	registerRequestProcessor(app, agentManager, variationManager);
+	registerRequestProcessor(app, agentManager, variationManager, config);
 
 	// ── Graceful shutdown ──────────────────────────
 	const shutdown = async () => {
