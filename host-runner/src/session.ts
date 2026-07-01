@@ -68,12 +68,19 @@ export class PiSession extends EventEmitter {
 			if (this.config.piModel) {
 				command.push("--model", shellQuote(this.config.piModel));
 			}
-			newSession(this.project, this.dir, command.join(" "), {
+			const envVars: Record<string, string> = {
 				PATH: process.env.PATH ?? "",
 				PI_PROVIDER: this.config.piProvider,
 				PI_MODEL: this.config.piModel,
 				[this.config.providerKeyEnv]: process.env[this.config.providerKeyEnv] ?? "",
-			});
+			};
+			if (this.config.githubToken) {
+				envVars.GITHUB_TOKEN = this.config.githubToken;
+				envVars.GIT_CONFIG_COUNT = "1";
+				envVars.GIT_CONFIG_KEY_0 = `url.https://${this.config.githubToken}@github.com/.insteadOf`;
+				envVars.GIT_CONFIG_VALUE_0 = "https://github.com/";
+			}
+			newSession(this.project, this.dir, command.join(" "), envVars);
 		}
 		await this.connectSocket();
 	}
