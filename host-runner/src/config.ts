@@ -9,6 +9,7 @@ export interface Config {
 	piProvider: string;
 	piModel: string;
 	providerKeyEnv: string;
+	githubToken: string;
 }
 
 const PROVIDER_API_KEY_ENV: Record<string, string> = {
@@ -35,6 +36,7 @@ export function loadConfig(): Config {
 		piProvider,
 		piModel: env("PI_MODEL"),
 		providerKeyEnv: PROVIDER_API_KEY_ENV[piProvider] ?? "OPENROUTER_API_KEY",
+		githubToken: env("GITHUB_TOKEN"),
 	};
 }
 

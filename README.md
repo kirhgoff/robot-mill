@@ -34,8 +34,10 @@ robot-mill/
 │   ├── 30-github.sh           GitHub CLI (gh)
 │   ├── 40-user-setup.sh       'agent' user, workspace, SSH dir
 │   └── 50-entrypoint.sh       writes /home/agent/entrypoint.sh (runs the compose command)
-├── robot-fastify-backend/     agent orchestration server
+├── robot-fastify-backend/     agent orchestration server (containerized, /workspace)
 ├── telegram-frontend/         Telegram bot
+├── host-runner/               pi agents in host tmux sessions on real projects
+├── linear-connector/          dispatches Linear issues to agents
 ├── web-variations-frontend/   experimental UI (disabled)
 ├── scripts/deploy-remote.fish redeploy to the peeper box
 └── DEPLOYMENT_NOTES.md
@@ -97,6 +99,44 @@ it. See `DEPLOYMENT_NOTES.md` for the full remote setup.
 | `/system` | System-wide status (all agents) |
 
 Any other message is forwarded to pi as a prompt.
+
+## Host runner — agents on real host projects
+
+The backend runs agents inside the container in an isolated `/workspace`. The
+**host-runner** (runs directly on the host, under bun) instead runs one pi RPC
+session per real project on the host, each inside a tmux session named
+`pi-<project>`, with full host access (files, `docker compose`, scripts).
+
+- Config: `~/robot-mill/host-runner.env` (`HOST_RUNNER_PORT`, `PROJECTS_DIR`,
+  `ALLOWED_PROJECTS`, `PI_PROVIDER`, `PI_MODEL`, provider key, `GITHUB_TOKEN`).
+- Start: `host-runner/start.sh` (launches tmux session `robot-mill-host-runner`).
+- Drive from Telegram with `/project <name>`; observe/steer with
+  `host-runner/attach.sh <project>` (i.e. `tmux attach -t pi-<project>`).
+- Git auth is injected per-agent via `GIT_CONFIG_*` env (uses `GITHUB_TOKEN`
+  without touching the host's `~/.gitconfig`).
+
+**Firewall note:** the host-runner is a raw host process (not a docker-published
+port), so the Telegram *container* reaching it via `host.docker.internal:3200` is
+subject to `ufw`. Allow the docker bridge subnets once:
+
+```sh
+sudo ufw allow from 172.16.0.0/12 to any port 3200 proto tcp
+```
+
+(The linear-connector runs on the host and reaches the host-runner over loopback,
+so it needs no firewall change.)
+
+## Linear connector
+
+Polls a Linear status column and dispatches issues to agents.
+
+- Config: `~/robot-mill/linear-connector.env` (`LINEAR_API_KEY`, `LINEAR_TEAM_KEY`,
+  `LINEAR_TRIGGER_STATE`, `HOST_RUNNER_URL`, …).
+- Move an issue into the trigger column (default **"Agent Queue"**, auto-created)
+  and label it with a target host project (e.g. `media-streaming`). The connector
+  moves it to **In Progress**, runs the agent with the issue as its task, comments
+  the result, and moves it to **In Review**.
+- Start: `linear-connector/start.sh` (tmux session `robot-mill-linear`).
 
 ## Local development
 
