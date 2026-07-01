@@ -30,7 +30,7 @@ beforeAll(async () => {
 		sessionStorage: join(tempDir, "sessions"),
 		piProvider: "anthropic",
 		piModel: "",
-		anthropicApiKey: "",
+		apiKeys: { ANTHROPIC_API_KEY: "test-key" },
 		logLevel: "silent",
 	};
 

@@ -170,7 +170,7 @@ function handleClientMessage(
 			break;
 
 		case "spawn": {
-			const info = agentManager.spawn(msg as unknown as SpawnAgentRequest);
+			const info = agentManager.spawn(parseSpawnRequest(msg));
 			// Auto-subscribe to the new agent
 			client.subscriptions.add(info.id);
 			client.socket.send(JSON.stringify({ ack: "spawned", agent: info }));
@@ -196,4 +196,23 @@ function handleClientMessage(
 		default:
 			throw new Error(`Unknown action: ${action}`);
 	}
+}
+
+function parseSpawnRequest(msg: Record<string, unknown>): SpawnAgentRequest {
+	if (typeof msg.name !== "string" || !msg.name) {
+		throw new Error("spawn requires a non-empty string 'name'");
+	}
+	const str = (v: unknown): string | undefined =>
+		typeof v === "string" ? v : undefined;
+	return {
+		name: msg.name,
+		cwd: str(msg.cwd),
+		provider: str(msg.provider),
+		model: str(msg.model),
+		tools: str(msg.tools),
+		systemPrompt: str(msg.systemPrompt),
+		sessionId: str(msg.sessionId),
+		resumeSession:
+			typeof msg.resumeSession === "boolean" ? msg.resumeSession : undefined,
+	};
 }

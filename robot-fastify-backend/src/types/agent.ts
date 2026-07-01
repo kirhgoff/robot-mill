@@ -47,7 +47,6 @@ export interface PromptRequest {
 
 export interface SpawnAgentRequest {
 	name: string;
-	runtime?: "pi" | "custom";
 	cwd?: string;
 	provider?: string;
 	model?: string;

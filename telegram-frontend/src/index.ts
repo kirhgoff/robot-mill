@@ -16,7 +16,14 @@ const ALLOWED_CHAT_IDS = (process.env.ALLOWED_CHAT_IDS || "")
 	.split(",")
 	.map((s) => s.trim())
 	.filter(Boolean)
-	.map(Number);
+	.map((s) => {
+		const id = Number(s);
+		if (!Number.isInteger(id)) {
+			console.error(`Invalid ALLOWED_CHAT_IDS entry: "${s}"`);
+			process.exit(1);
+		}
+		return id;
+	});
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3100";
 const BACKEND_WS_URL = process.env.BACKEND_WS_URL || "ws://localhost:3100/ws";
