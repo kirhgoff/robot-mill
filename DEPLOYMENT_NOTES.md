@@ -12,9 +12,10 @@ Current deployment:
 
 Data layout (peeper convention):
 
-- Mutable data lives in `/home/kirhgoff/robot-mill/` (home root): `workspace/`, `pi-home/`, `agent-sessions/`, `target/`, and `.env`.
-- The repo symlinks `data -> /home/kirhgoff/robot-mill` and `.env -> /home/kirhgoff/robot-mill/.env`. Compose bind-mounts `./data/*` into the containers.
-- These dirs are `chmod 777` so the container `agent` user (uid 1001) can write.
+- Mutable data lives in `/home/kirhgoff/robot-mill/` (home root): `workspace/`, `pi-home/`, `agent-sessions/`, `target/`. The repo symlinks `data -> /home/kirhgoff/robot-mill`; compose bind-mounts `./data/*` into the containers. These dirs are `chmod 777` so the container `agent` user (uid 1001) can write.
+- **Env files convention:** each project keeps its `.env` as a symlink to an independent per-project file in the home root, `~/<project>.env`. E.g. `~/Projects/robot-mill/.env -> ~/robot-mill.env`, `~/Projects/eurotrip-support/.env -> ~/eurotrip-support.env`, likewise for `media-streaming` and `nightcrawler`. Edit the `~/<project>.env` file to change secrets; gitignored, host-only.
+- robot-mill's host components have their own env files in the data dir: `~/robot-mill/host-runner.env`, `~/robot-mill/linear-connector.env` (+ optional `health-monitor.env`).
+- eurotrip-support's `bun run all` also needs Google OAuth files in its repo dir (`credentials.json`, `token.json`, `token.docs.json`, `token.calendar.json`) — copied from a machine where the OAuth flow was completed (tokens can't be generated headlessly).
 
 Redeploy from another machine:
 
