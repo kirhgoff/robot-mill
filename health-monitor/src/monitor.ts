@@ -13,10 +13,17 @@ export interface CheckResult {
 	durationMs: number;
 }
 
+interface Pending {
+	resolve: (text: string) => void;
+	reject: (err: Error) => void;
+	timer: ReturnType<typeof setTimeout>;
+}
+
 export class Monitor {
 	private config: Config;
 	private ws: WebSocket | null = null;
-	private pending = new Map<string, (text: string) => void>();
+	private pending = new Map<string, Pending>();
+	private gen = new Map<string, number>();
 	private results = new Map<string, CheckResult>();
 
 	constructor(config: Config) {
@@ -24,7 +31,22 @@ export class Monitor {
 		mkdirSync(config.stateDir, { recursive: true });
 	}
 
+	private seedInitial(): void {
+		for (const project of [this.config.mediaProject, this.config.robotProject, this.config.eurotripProject]) {
+			if (this.results.has(project)) continue;
+			this.results.set(project, {
+				name: project,
+				project,
+				status: "unknown",
+				detail: "waiting for first check…",
+				at: Date.now(),
+				durationMs: 0,
+			});
+		}
+	}
+
 	start(): void {
+		this.seedInitial();
 		this.connect();
 		void this.runHealthCheck(this.config.mediaProject, mediaPrompt());
 		void this.runHealthCheck(this.config.robotProject, robotPrompt());
@@ -69,7 +91,12 @@ export class Monitor {
 			try {
 				const msg = JSON.parse(ev.data as string);
 				if (msg.type === "message_complete" && typeof msg.project === "string") {
-					this.pending.get(msg.project)?.(String(msg.data ?? ""));
+					const p = this.pending.get(msg.project);
+					if (p) {
+						clearTimeout(p.timer);
+						this.pending.delete(msg.project);
+						p.resolve(String(msg.data ?? ""));
+					}
 				}
 			} catch {
 				// ignore
@@ -83,16 +110,18 @@ export class Monitor {
 	}
 
 	private async prompt(project: string, message: string): Promise<string> {
+		const existing = this.pending.get(project);
+		if (existing) {
+			clearTimeout(existing.timer);
+			this.pending.delete(project);
+			existing.reject(new Error("superseded by a newer check"));
+		}
 		const completion = new Promise<string>((resolve, reject) => {
 			const timer = setTimeout(() => {
 				this.pending.delete(project);
 				reject(new Error("timed out waiting for agent"));
 			}, this.config.promptTimeoutMs);
-			this.pending.set(project, (text) => {
-				clearTimeout(timer);
-				this.pending.delete(project);
-				resolve(text);
-			});
+			this.pending.set(project, { resolve, reject, timer });
 		});
 		const res = await fetch(`${this.config.hostRunnerUrl}/projects/${encodeURIComponent(project)}/prompt`, {
 			method: "POST",
@@ -100,7 +129,11 @@ export class Monitor {
 			body: JSON.stringify({ message }),
 		});
 		if (!res.ok) {
-			this.pending.delete(project);
+			const p = this.pending.get(project);
+			if (p) {
+				clearTimeout(p.timer);
+				this.pending.delete(project);
+			}
 			throw new Error(`host-runner prompt failed (${res.status})`);
 		}
 		return completion;
@@ -120,11 +153,15 @@ export class Monitor {
 
 	private async runHealthCheck(project: string, prompt: string): Promise<void> {
 		const startedAt = Date.now();
+		const myGen = (this.gen.get(project) ?? 0) + 1;
+		this.gen.set(project, myGen);
 		try {
 			const text = await this.prompt(project, prompt);
+			if (this.gen.get(project) !== myGen) return;
 			const verdict = parseVerdict(text);
 			this.record(project, project, verdict.status, verdict.detail, startedAt);
 		} catch (err) {
+			if (this.gen.get(project) !== myGen) return;
 			this.record(project, project, "error", err instanceof Error ? err.message : "unknown", startedAt);
 		}
 	}
@@ -132,6 +169,8 @@ export class Monitor {
 	private async runEurotripCheck(): Promise<void> {
 		const project = this.config.eurotripProject;
 		const startedAt = Date.now();
+		const myGen = (this.gen.get(project) ?? 0) + 1;
+		this.gen.set(project, myGen);
 		const marker = join(this.config.stateDir, "eurotrip-last-sync");
 		const lastSync = readTimestamp(marker);
 		const ageMs = lastSync ? Date.now() - lastSync : Number.POSITIVE_INFINITY;
@@ -144,6 +183,7 @@ export class Monitor {
 
 		try {
 			const text = await this.prompt(project, eurotripSyncPrompt());
+			if (this.gen.get(project) !== myGen) return;
 			const verdict = parseVerdict(text);
 			if (verdict.status === "ok") {
 				writeFileSync(marker, String(Date.now()));
@@ -152,6 +192,7 @@ export class Monitor {
 				this.record(project, project, "fail", `sync failed: ${verdict.detail}`, startedAt);
 			}
 		} catch (err) {
+			if (this.gen.get(project) !== myGen) return;
 			this.record(project, project, "error", err instanceof Error ? err.message : "unknown", startedAt);
 		}
 	}
