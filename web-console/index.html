@@ -72,6 +72,9 @@
   .tag.run { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
   .tag.idle { color: var(--dim); }
   .s-ok { color: var(--ok); } .s-fail, .s-error { color: var(--err); } .s-unknown, .s-unreachable { color: var(--warn); }
+  .fix { flex: none; align-self: center; font-size: 10px; padding: 3px 8px; letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; }
+  .fix:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .fix:disabled { opacity: 0.5; cursor: default; }
   .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
   .tab { font-size: 11px; padding: 4px 9px; border: 1px solid var(--line); background: var(--panel2); color: var(--dim); cursor: pointer; border-radius: 2px; display: inline-flex; align-items: center; gap: 5px; }
   .tab:hover { color: var(--accent); border-color: var(--accent); }
@@ -278,12 +281,14 @@ async function refresh(){
   $("dot").style.color = overall==="ok" ? "var(--ok)" : (overall==="degraded"||overall==="unreachable") ? "var(--err)" : "var(--warn)";
 
   const checks = (d.health && d.health.checks) || [];
+  const runningHosts = new Set((d.hostProjects && d.hostProjects.running) || []);
   $("health").innerHTML = checks.length ? checks.map(c => `
     <div class="row"><div style="flex:1">
       <span class="name s-${esc(c.status)}">${esc(c.name)}</span>
       <span class="tag s-${esc(c.status)}">${esc(c.status)}</span>
       <div class="meta">${esc(c.detail||"")} · ${ago(c.at)} ago</div>
-    </div></div>`).join("") : `<span class="muted">no health data (monitor offline?)</span>`;
+    </div><button class="fix" data-project="${esc(c.project||c.name)}" title="restart agent & re-run check">⟳ fix</button></div>`).join("") : `<span class="muted">no health data (monitor offline?)</span>`;
+  document.querySelectorAll("#health .fix").forEach(b => b.onclick = () => fixComponent(b));
 
   const hp = d.hostProjects || {allowed:[],running:[]};
   renderTabs(hp);
@@ -331,6 +336,19 @@ function renderTabs(hp){
   $("tabs").innerHTML = tabs.map(t=>`<span class="tab ${t===selectedTab?"active":""}" data-tab="${esc(t)}">${t==="all"?"ALL":esc(t)}${t!=="all"&&running.has(t)?'<span class="ld"></span>':""}</span>`).join("");
   document.querySelectorAll("#tabs .tab").forEach(el=>el.onclick=()=>selectTab(el.dataset.tab));
   updateCmd();
+}
+
+async function fixComponent(btn){
+  const project = btn.dataset.project;
+  btn.disabled = true; btn.textContent = "restarting…";
+  const t = new Date().toISOString().slice(11,19);
+  pushEvent({project, html:`<span class="muted">${t}</span> <span style="color:var(--accent)">⟳ restarting ${esc(project)} agent…</span>`});
+  try {
+    await fetch(`/api/host/${encodeURIComponent(project)}/restart`,{method:"POST"});
+    btn.textContent = "rechecking…";
+    await fetch(`/api/health/${encodeURIComponent(project)}/recheck`,{method:"POST"});
+    setTimeout(refresh, 1200);
+  } catch { btn.textContent = "err"; setTimeout(()=>{ btn.disabled=false; btn.textContent="⟳ fix"; }, 2000); }
 }
 
 async function sendCmd(){

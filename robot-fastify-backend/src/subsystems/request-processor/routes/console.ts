@@ -71,4 +71,28 @@ export function registerConsoleRoutes(
 			return (await res.json().catch(() => ({ ok: false }))) as unknown;
 		},
 	);
+
+	app.post<{ Params: { project: string } }>(
+		"/api/host/:project/restart",
+		async (req, reply) => {
+			const res = await fetch(
+				`${config.hostRunnerUrl}/projects/${encodeURIComponent(req.params.project)}/restart`,
+				{ method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
+			);
+			reply.status(res.status);
+			return (await res.json().catch(() => ({ ok: false }))) as unknown;
+		},
+	);
+
+	app.post<{ Params: { project: string } }>(
+		"/api/health/:project/recheck",
+		async (req, reply) => {
+			const res = await fetch(
+				`${config.healthUrl}/check/${encodeURIComponent(req.params.project)}`,
+				{ method: "POST" },
+			);
+			reply.status(res.status);
+			return (await res.json().catch(() => ({ ok: false }))) as unknown;
+		},
+	);
 }

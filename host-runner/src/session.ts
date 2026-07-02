@@ -247,6 +247,14 @@ export class PiSessionManager extends EventEmitter {
 		return this.ensureSession(taskId(project, branch), dir);
 	}
 
+	async restart(project: string): Promise<PiSession> {
+		const existing = this.sessions.get(project);
+		if (existing) existing.kill();
+		else killSession(project);
+		this.sessions.delete(project);
+		return this.get(project);
+	}
+
 	killTask(project: string, branch: string): void {
 		this.kill(taskId(project, branch));
 		removeWorktree(

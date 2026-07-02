@@ -23,6 +23,13 @@ const server = Bun.serve({
 				headers: { "content-type": "application/json" },
 			});
 		}
+		if (req.method === "POST" && url.pathname.startsWith("/check/")) {
+			const project = decodeURIComponent(url.pathname.slice("/check/".length));
+			void monitor.recheck(project);
+			return new Response(JSON.stringify({ ok: true, project }), {
+				headers: { "content-type": "application/json" },
+			});
+		}
 		if (url.pathname === "/" || url.pathname === "/status") {
 			const lines = results.map(
 				(r) => `${icon(r.status)} ${r.name.padEnd(18)} ${r.status.toUpperCase().padEnd(8)} ${r.detail}`,
