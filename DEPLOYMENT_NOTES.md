@@ -56,6 +56,7 @@ Deploy with the Telegram service enabled (from another machine):
 
 Notes:
 
+- The deploy script also restarts the host components (host-runner, health-monitor, linear-connector) in their tmux sessions, then health-checks both the backend (port `3100`) and host-runner (port `3200`).
 - `.env` is gitignored and is NOT managed by the deploy script. Set secrets directly in the remote `.env`; they persist across deploys.
 - The container entrypoint runs the Compose `command:` for each service (`install/50-entrypoint.sh`). It previously hijacked any service that had `TELEGRAM_BOT_TOKEN` set to run a removed `bot/bot.js`; that branch was removed.
 - The pi home dir (`/home/agent/.pi`, bind-mounted from `data/pi-home`) must be writable by `agent` (uid 1001) or `pi` fails with `EACCES`; the deploy script `chmod 777`s the data dirs.
