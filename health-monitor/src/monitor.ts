@@ -41,6 +41,27 @@ export class Monitor {
 		return [...this.results.values()].sort((a, b) => a.name.localeCompare(b.name));
 	}
 
+	async recheck(project: string): Promise<CheckResult | null> {
+		const known = [this.config.mediaProject, this.config.robotProject, this.config.eurotripProject];
+		if (!known.includes(project)) return null;
+		this.results.set(project, {
+			name: project,
+			project,
+			status: "unknown",
+			detail: "re-checking…",
+			at: Date.now(),
+			durationMs: 0,
+		});
+		if (project === this.config.mediaProject) {
+			await this.runHealthCheck(project, mediaPrompt());
+		} else if (project === this.config.robotProject) {
+			await this.runHealthCheck(project, robotPrompt());
+		} else {
+			await this.runEurotripCheck();
+		}
+		return this.results.get(project) ?? null;
+	}
+
 	private connect(): void {
 		this.ws = new WebSocket(this.config.hostRunnerWsUrl);
 		this.ws.onopen = () => console.log(`connected to host-runner ${this.config.hostRunnerWsUrl}`);

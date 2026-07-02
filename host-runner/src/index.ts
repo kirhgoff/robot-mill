@@ -111,6 +111,10 @@ const server = Bun.serve({
 						manager.killTask(project, branch);
 						return json({ ok: true });
 					}
+					if (req.method === "POST" && action === "/restart") {
+						const session = await manager.restart(project);
+						return json({ ok: true, running: session.running });
+					}
 					if (req.method === "POST" && action === "/abort") {
 						const session = await manager.get(project);
 						session.abort();
