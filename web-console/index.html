@@ -35,22 +35,31 @@
   }
   .wrap { max-width: 1100px; margin: 0 auto; padding: 16px 14px 60px; }
   header { border: 1px solid var(--line); background: rgba(17,17,29,0.7); backdrop-filter: blur(3px);
-    padding: 10px 14px; margin-bottom: 16px; transition: background 0.4s ease, border-color 0.4s ease; }
+    padding: 12px 14px; margin-bottom: 16px; border-radius: 0 8px 8px 8px;
+    transition: background 0.4s ease, border-color 0.4s ease; }
   body.ph header { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.18); }
 
   /* ── view title tabs ─────────────────────────────── */
-  .titlebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .vtab { background: none; border: none; padding: 4px 2px; cursor: pointer; font-family: var(--font);
-    font-weight: 800; letter-spacing: 2px; text-transform: uppercase; font-size: clamp(15px, 2.4vw, 22px);
-    color: var(--dim); opacity: 0.32; transition: opacity 0.2s, color 0.2s, text-shadow 0.2s; line-height: 1; }
-  .vtab:hover { opacity: 0.7; }
-  .vtab.active { opacity: 1; }
-  .vtab[data-view="robotmill"].active { color: var(--accent); text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent); }
-  .vtab[data-view="poophouse"].active { color: var(--ph-orange2); text-shadow: 0 0 12px rgba(255,158,24,0.6); }
-  .vtab .ph-emoji { font-size: 0.9em; }
+  .titletabs { display: flex; gap: 6px; padding-left: 4px; }
+  .ttab { font-family: var(--font); font-weight: 800; letter-spacing: 2px; text-transform: uppercase;
+    font-size: clamp(13px, 2vw, 16px); cursor: pointer; line-height: 1;
+    color: var(--dim); background: transparent; border: 1px solid transparent; border-bottom: none;
+    padding: 9px 16px; border-radius: 9px 9px 0 0; position: relative; top: 1px;
+    transition: color 0.2s, background 0.2s, border-color 0.2s, text-shadow 0.2s; }
+  .ttab:hover { color: var(--fg); }
+  .ttab.active { color: var(--accent); background: rgba(17,17,29,0.7); border-color: var(--line);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent); }
+  .ttab[data-view="poophouse"].active { color: var(--ph-orange2); text-shadow: 0 0 12px rgba(255,158,24,0.55); }
+  body.ph .ttab { color: rgba(255,244,214,0.55); }
+  body.ph .ttab:hover { color: var(--ph-ink); }
+  body.ph .ttab.active { color: var(--ph-ink); background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2);
+    text-shadow: 0 0 12px rgba(255,158,24,0.5); }
+  .ttab .ph-emoji { font-size: 0.9em; }
+  .statusgroup { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .credits-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; letter-spacing: 1px;
+    text-transform: uppercase; padding: 4px 10px; border: 1px solid var(--line); border-radius: 2px; }
+  .credits-pill .amt { font-weight: 800; }
 
-  .logo { color: var(--accent); text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
-    font-size: clamp(5px, 1.6vw, 10px); line-height: 1.05; white-space: pre; overflow-x: auto; margin: 12px 0 4px; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; margin-top: 10px; }
   .status-pill { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
   .dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
@@ -128,21 +137,20 @@
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <div class="titlebar">
-      <button class="vtab" data-view="robotmill" title="robot mill console">robot mill</button>
-      <button class="vtab active" data-view="poophouse" title="poop house dashboard"><span class="ph-emoji">🏠</span> poop house</button>
-    </div>
+  <nav class="titletabs">
+    <button class="ttab" data-view="robotmill" title="robot mill console">robot mill</button>
+    <button class="ttab active" data-view="poophouse" title="poop house dashboard"><span class="ph-emoji">🏠</span> poop house</button>
+  </nav>
 
-    <!-- robot-mill-only header bits -->
-    <div id="rmHeader">
-      <pre class="logo" id="logo"></pre>
-      <div class="bar">
+  <header id="rmHeader">
+    <div class="bar">
+      <div class="statusgroup">
         <span class="status-pill"><span class="dot" id="dot" style="color:var(--warn)"></span><span id="overall">booting…</span></span>
-        <div class="controls">
-          <select id="theme" title="theme"></select>
-          <button id="refresh" title="refresh">↻ sync</button>
-        </div>
+        <span class="credits-pill" id="creditsPill" style="display:none"></span>
+      </div>
+      <div class="controls">
+        <select id="theme" title="theme"></select>
+        <button id="refresh" title="refresh">↻ sync</button>
       </div>
     </div>
   </header>
@@ -168,8 +176,7 @@
   <!-- ══ POOP HOUSE VIEW ══════════════════════════════════════════ -->
   <div class="view active" id="view-poophouse">
     <div class="ph-hero">
-      <h1>🏠 Poop House</h1>
-      <p>Your streaming soup of poop</p>
+      <p>🏠 Your streaming soup of poop</p>
     </div>
 
     <div class="ph-section">
@@ -212,27 +219,19 @@
 </div>
 
 <script>
-const LOGO = String.raw`
- ____   ___  ____   ___ _____   __  __ ___ _     _
-|  _ \ / _ \| __ ) / _ \_   _| |  \/  |_ _| |   | |
-| |_) | | | |  _ \| | | || |   | |\/| || || |   | |
-|  _ <| |_| | |_) | |_| || |   | |  | || || |___| |___
-|_| \_\\___/|____/ \___/ |_|   |_|  |_|___|_____|_____|`;
-document.getElementById("logo").textContent = LOGO;
-
-// ── View tabs (robot mill / poop house) ──────────────────
 function setView(view){
-  document.querySelectorAll(".vtab").forEach(el => el.classList.toggle("active", el.dataset.view === view));
+  document.querySelectorAll(".ttab").forEach(el => el.classList.toggle("active", el.dataset.view === view));
   document.getElementById("view-robotmill").classList.toggle("active", view === "robotmill");
   document.getElementById("view-poophouse").classList.toggle("active", view === "poophouse");
   const ph = view === "poophouse";
   document.body.classList.toggle("ph", ph);
   document.getElementById("rmHeader").style.display = ph ? "none" : "block";
   document.getElementById("foot").style.display = ph ? "none" : "block";
+  document.title = ph ? "poop house" : "robot-mill // console";
   localStorage.setItem("rm-view", view);
   document.querySelector('meta[name=theme-color]').setAttribute("content", ph ? "#012a5e" : (THEMES[themeSel.value]||THEMES.cyberpunk)["--bg"]);
 }
-document.querySelectorAll(".vtab").forEach(el => el.onclick = () => setView(el.dataset.view));
+document.querySelectorAll(".ttab").forEach(el => el.onclick = () => setView(el.dataset.view));
 
 // poop house links: build from current hostname (works on LAN, Tailscale, etc.)
 const phHost = window.location.hostname;
@@ -300,16 +299,35 @@ async function refresh(){
       <div class="meta">${esc(a.cwd||"")}${a.currentTask?" · "+esc(a.currentTask.slice(0,60)):""}</div>
     </div></div>`).join("") : `<span class="muted">no container agents running</span>`;
 
+  renderCredits(d.credits);
+
   const sys = d.system || {};
   const hs = d.hostSystem;
   const memRow = hs && hs.mem ? meterRow("memory", hs.mem.total - hs.mem.free, hs.mem.total) : "";
   const diskRow = hs && hs.disk ? meterRow("disk", hs.disk.total - hs.disk.free, hs.disk.total) : "";
+  const cr = d.credits;
+  const credRow = cr && cr.available
+    ? `<div class="row"><span class="name">${esc(cr.provider)} credits</span><span class="meta" style="color:${creditColor(cr.remaining)}">$${(cr.remaining??0).toFixed(2)} left of $${(cr.total??0).toFixed(2)}</span></div>`
+    : "";
   $("system").innerHTML = `
     <div class="row"><span class="name">uptime</span><span class="meta">${sys.uptime?fmtDur(sys.uptime):"—"}</span></div>
     <div class="row"><span class="name">container agents</span><span class="meta">${sys.agentCount??"—"}</span></div>
     <div class="row"><span class="name">host projects</span><span class="meta">${(hp.allowed||[]).length} (${(hp.running||[]).length} live)</span></div>
     <div class="row"><span class="name">components ok</span><span class="meta">${checks.filter(c=>c.status==="ok").length}/${checks.length}</span></div>
-    ${memRow}${diskRow}`;
+    ${credRow}${memRow}${diskRow}`;
+}
+
+function creditColor(rem){ return rem < 5 ? "var(--err)" : rem < 20 ? "var(--warn)" : "var(--ok)"; }
+function renderCredits(c){
+  const pill = $("creditsPill");
+  if(!c || !c.available){ pill.style.display = "none"; return; }
+  const rem = c.remaining ?? 0;
+  const color = creditColor(rem);
+  pill.style.display = "inline-flex";
+  pill.style.color = color;
+  pill.style.borderColor = color;
+  pill.innerHTML = `credits <span class="amt">$${rem.toFixed(2)}</span>`;
+  pill.title = `${c.provider}: $${(c.usage??0).toFixed(2)} used of $${(c.total??0).toFixed(2)}`;
 }
 
 // ── Tabs, command input, filtered live output ────────────

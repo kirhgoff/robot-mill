@@ -35,6 +35,39 @@ if (errors.length > 0) {
 const manager = new PiSessionManager(config);
 const clients = new Set<ServerWebSocket<unknown>>();
 
+interface CreditsInfo {
+	provider: string;
+	available: boolean;
+	total?: number;
+	usage?: number;
+	remaining?: number;
+}
+
+const CREDITS_TTL_MS = 60_000;
+let creditsCache: { at: number; data: CreditsInfo } | null = null;
+
+async function fetchCredits(): Promise<CreditsInfo> {
+	if (config.piProvider !== "openrouter") return { provider: config.piProvider, available: false };
+	const key = process.env[config.providerKeyEnv];
+	if (!key) return { provider: config.piProvider, available: false };
+	const res = await fetch("https://openrouter.ai/api/v1/credits", {
+		headers: { authorization: `Bearer ${key}` },
+		signal: AbortSignal.timeout(5000),
+	});
+	if (!res.ok) return { provider: config.piProvider, available: false };
+	const body = (await res.json()) as { data?: { total_credits?: number; total_usage?: number } };
+	const total = Number(body.data?.total_credits ?? 0);
+	const usage = Number(body.data?.total_usage ?? 0);
+	return { provider: config.piProvider, available: true, total, usage, remaining: total - usage };
+}
+
+async function credits(): Promise<CreditsInfo> {
+	if (creditsCache && Date.now() - creditsCache.at < CREDITS_TTL_MS) return creditsCache.data;
+	const data = await fetchCredits().catch(() => ({ provider: config.piProvider, available: false }));
+	creditsCache = { at: Date.now(), data };
+	return data;
+}
+
 manager.on("output", (output: SessionOutput) => broadcast(output));
 
 function broadcast(payload: unknown): void {
@@ -78,6 +111,8 @@ const server = Bun.serve({
 		if (path === "/health_check") return json({ status: "ok" });
 
 		if (path === "/system") return json(systemStats());
+
+		if (path === "/credits") return json(await credits());
 
 		if (path === "/projects" && req.method === "GET") {
 			return json({ allowed: manager.listProjects(), running: listSessions() });
