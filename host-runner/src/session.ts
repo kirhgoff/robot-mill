@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { connect, type Socket } from "node:net";
-import { existsSync } from "node:fs";
+import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "./config";
 import { hasSession, killSession, newSession } from "./tmux";
@@ -90,12 +90,16 @@ export class PiSession extends EventEmitter {
 		for (let attempt = 0; attempt < 50; attempt++) {
 			if (existsSync(this.socketPath)) {
 				await new Promise<void>((resolve, reject) => {
-					const sock = connect(this.socketPath);
-					sock.once("connect", () => {
-						this.attach(sock);
-						resolve();
-					});
-					sock.once("error", reject);
+					try {
+						const sock = connect(this.socketPath);
+						sock.once("connect", () => {
+							this.attach(sock);
+							resolve();
+						});
+						sock.once("error", reject);
+					} catch (err) {
+						reject(err);
+					}
 				}).catch(() => undefined);
 				if (this.socket && !this.socket.destroyed) return;
 			}
@@ -141,6 +145,20 @@ export class PiSession extends EventEmitter {
 				if (mev?.type === "text_delta") {
 					this.pendingText += mev.delta as string;
 					this.emitOutput("text", mev.delta);
+				}
+				break;
+			}
+			case "message_end": {
+				const message = event.message as Record<string, unknown> | undefined;
+				if (
+					message?.role === "assistant" &&
+					message.stopReason === "error" &&
+					typeof message.errorMessage === "string" &&
+					message.errorMessage.trim()
+				) {
+					const errorText = `agent error: ${message.errorMessage}`;
+					this.pendingText = errorText;
+					this.emitOutput("text", errorText);
 				}
 				break;
 			}
@@ -192,6 +210,13 @@ export class PiSession extends EventEmitter {
 		if (this.socket) this.socket.destroy();
 		this.socket = null;
 		killSession(this.project);
+		this.removeSocketFile();
+	}
+
+	private removeSocketFile(): void {
+		try {
+			unlinkSync(this.socketPath);
+		} catch {}
 	}
 
 	get running(): boolean {
@@ -250,7 +275,7 @@ export class PiSessionManager extends EventEmitter {
 	async restart(project: string): Promise<PiSession> {
 		const existing = this.sessions.get(project);
 		if (existing) existing.kill();
-		else killSession(project);
+		else new PiSession(project, join(this.config.projectsDir, project), this.config).kill();
 		this.sessions.delete(project);
 		return this.get(project);
 	}
