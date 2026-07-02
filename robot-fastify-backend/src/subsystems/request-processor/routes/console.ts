@@ -35,7 +35,7 @@ export function registerConsoleRoutes(
 	app.get("/console", serveConsole);
 
 	app.get("/api/overview", async () => {
-		const [projects, health, hostSystem] = await Promise.all([
+		const [projects, health, hostSystem, credits] = await Promise.all([
 			fetchJson<{ allowed: string[]; running: string[] }>(
 				`${config.hostRunnerUrl}/projects`,
 			),
@@ -46,6 +46,13 @@ export function registerConsoleRoutes(
 				mem: { free: number; total: number };
 				disk: { free: number; total: number };
 			}>(`${config.hostRunnerUrl}/system`),
+			fetchJson<{
+				provider: string;
+				available: boolean;
+				total?: number;
+				usage?: number;
+				remaining?: number;
+			}>(`${config.hostRunnerUrl}/credits`),
 		]);
 		return {
 			agents: agentManager.listAgents(),
@@ -53,6 +60,7 @@ export function registerConsoleRoutes(
 			hostProjects: projects ?? { allowed: [], running: [] },
 			hostSystem: hostSystem ?? null,
 			health: health ?? { overall: "unreachable", checks: [] },
+			credits: credits ?? null,
 		};
 	});
 
