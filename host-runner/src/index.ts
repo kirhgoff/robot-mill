@@ -6,6 +6,13 @@ import { PiSessionManager, type SessionOutput } from "./session";
 import { listSessions } from "./tmux";
 import { taskId } from "./worktree";
 
+process.on("uncaughtException", (err) => {
+	console.error("uncaughtException:", err);
+});
+process.on("unhandledRejection", (reason) => {
+	console.error("unhandledRejection:", reason);
+});
+
 function diskStats(path: string): { free: number; total: number } {
 	const res = spawnSync("df", ["-kP", path], { encoding: "utf-8" });
 	const line = (res.stdout || "").trim().split("\n")[1] || "";
