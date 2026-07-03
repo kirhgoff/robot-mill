@@ -40,7 +40,7 @@
   body.ph header { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.18); }
 
   /* ── view title tabs ─────────────────────────────── */
-  .titletabs { display: flex; gap: 6px; padding-left: 4px; }
+  .titletabs { display: flex; gap: 6px; padding-left: 4px; align-items: flex-end; }
   .ttab { font-family: var(--font); font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;
     font-size: clamp(18px, 4.4vw, 30px); cursor: pointer; line-height: 1;
     color: var(--dim); background: transparent; border: 1px solid transparent; border-bottom: none;
@@ -55,13 +55,15 @@
   body.ph .ttab.active { color: var(--ph-ink); background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2);
     text-shadow: 0 0 12px rgba(255,158,24,0.5); }
   .ttab .ph-emoji { font-size: 0.9em; }
-  .logo { margin: 2px 0 12px; font-size: clamp(4.5px, 1.45vw, 9px); line-height: 1.1; white-space: pre;
-    overflow-x: auto; font-weight: 700; letter-spacing: 0.5px; width: fit-content; max-width: 100%;
+  .ttab-logo { padding: 8px 16px 7px; }
+  .logo { margin: 0; font-size: clamp(4px, 1.15vw, 7.5px); line-height: 1.1; white-space: pre;
+    overflow: hidden; font-weight: 700; letter-spacing: 0.5px; width: fit-content; max-width: 100%;
     background: linear-gradient(100deg, var(--accent) 0%, var(--accent2) 45%, var(--accent) 90%);
     background-size: 220% auto; -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent; color: transparent;
-    filter: drop-shadow(0 0 7px color-mix(in srgb, var(--accent) 45%, transparent));
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 45%, transparent));
     animation: logoShimmer 7s linear infinite; }
+  .ttab-logo:not(.active) .logo { opacity: 0.4; animation: none; filter: none; }
   @keyframes logoShimmer { to { background-position: 220% center; } }
   @media (prefers-reduced-motion: reduce) { .logo { animation: none; } }
   .statusgroup { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
@@ -147,12 +149,11 @@
 <body>
 <div class="wrap">
   <nav class="titletabs">
-    <button class="ttab" data-view="robotmill" title="robot mill console">robot mill</button>
+    <button class="ttab ttab-logo" data-view="robotmill" title="robot mill console"><pre class="logo" id="logo" aria-hidden="true"></pre></button>
     <button class="ttab active" data-view="poophouse" title="poop house dashboard"><span class="ph-emoji">🏠</span> poop house</button>
   </nav>
 
   <header id="rmHeader">
-    <pre class="logo" id="logo" aria-hidden="true"></pre>
     <div class="bar">
       <div class="statusgroup">
         <span class="status-pill"><span class="dot" id="dot" style="color:var(--warn)"></span><span id="overall">booting…</span></span>
