@@ -59,7 +59,7 @@ function env(key: string, fallback = ""): string {
 function collectApiKeys(): Record<string, string> {
 	const keys: Record<string, string> = {};
 	for (const envName of Object.values(PROVIDER_API_KEY_ENV)) {
-		const value = process.env[envName];
+		const value = process.env[`${envName}_BACKEND`] ?? process.env[envName];
 		if (value) keys[envName] = value;
 	}
 	return keys;

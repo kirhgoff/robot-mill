@@ -48,7 +48,7 @@ let creditsCache: { at: number; data: CreditsInfo } | null = null;
 
 async function fetchCredits(): Promise<CreditsInfo> {
 	if (config.piProvider !== "openrouter") return { provider: config.piProvider, available: false };
-	const key = process.env[config.providerKeyEnv];
+	const key = config.providerKey;
 	if (!key) return { provider: config.piProvider, available: false };
 	const res = await fetch("https://openrouter.ai/api/v1/credits", {
 		headers: { authorization: `Bearer ${key}` },
@@ -135,6 +135,14 @@ const server = Bun.serve({
 					session.prompt(message);
 					return json({ ok: true });
 				}
+					if (req.method === "POST" && action === "/diagnose") {
+						const body = await readBody(req);
+						const message = body.message as string | undefined;
+						if (!message) return json({ error: "message is required" }, 400);
+						const timeoutMs = Number(body.timeoutMs ?? 5 * 60 * 1000);
+						const text = await manager.diagnose(project, message, timeoutMs);
+						return json({ ok: true, text });
+					}
 					if (req.method === "POST" && action === "/task") {
 						const body = await readBody(req);
 						const message = body.message as string | undefined;
