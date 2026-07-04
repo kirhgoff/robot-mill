@@ -60,6 +60,26 @@ for the selected provider:
 OpenRouter serves both Claude and GPT models, so a single `OPENROUTER_API_KEY` covers
 both with the `provider/id` model slug.
 
+### Per-system keys (cost attribution)
+
+Each system can use its own key so OpenRouter reports cost per system. Any unset
+per-system key **falls back to the shared `OPENROUTER_API_KEY`** (`ANTHROPIC_`/`OPENAI_`
+prefixes work the same way for those providers):
+
+| Env var | System | Set in |
+|---|---|---|
+| `OPENROUTER_API_KEY_BACKEND` | container workspace agents (incl. Telegram/Discord) | compose `.env` |
+| `OPENROUTER_API_KEY_HOSTRUNNER` | interactive `/project` agents | `host-runner.env` |
+| `OPENROUTER_API_KEY_LINEAR` | Linear ticket agents (host-runner `/task`) | `host-runner.env` |
+| `OPENROUTER_API_KEY_SERVICE` | low-cost diagnostic/technical model | `host-runner.env`, `health-monitor.env` |
+
+### Service model
+
+Health-check failures and other "technical" needs use a **separate, low-cost model**,
+`SERVICE_PI_MODEL` (default `anthropic/claude-haiku-4.5`), billed to
+`OPENROUTER_API_KEY_SERVICE`. It never touches the main agents' key or the expensive
+`PI_MODEL`.
+
 ## Quick start (Docker)
 
 ```bash
@@ -213,8 +233,10 @@ The backend runs agents inside the container in an isolated `/workspace`. The
 session per real project on the host, each inside a tmux session named
 `pi-<project>`, with full host access (files, `docker compose`, scripts).
 
-- Config: `~/robot-mill/host-runner.env` (`HOST_RUNNER_PORT`, `PROJECTS_DIR`,
-  `ALLOWED_PROJECTS`, `PI_PROVIDER`, `PI_MODEL`, provider key, `GITHUB_TOKEN`).
+- Config: `~/.envs/robot-mill/host-runner.env` (`HOST_RUNNER_PORT`, `PROJECTS_DIR`,
+  `ALLOWED_PROJECTS`, `PI_PROVIDER`, `PI_MODEL`, `SERVICE_PI_MODEL`, provider keys
+  — `OPENROUTER_API_KEY` plus optional `_HOSTRUNNER`/`_LINEAR`/`_SERVICE` splits,
+  `GITHUB_TOKEN`).
 - Start: `host-runner/start.sh` (launches tmux session `robot-mill-host-runner`).
 - Drive from Telegram with `/project <name>`; observe/steer with
   `host-runner/attach.sh <project>` (i.e. `tmux attach -t pi-<project>`).
@@ -236,24 +258,39 @@ host-runner over loopback, so they need no firewall change.
 
 ## Health monitor
 
-Runs scheduled health checks by **prompting the host agents** and parsing a
-`HEALTH: OK` / `HEALTH: FAIL - <reason>` verdict from each:
+Runs **deterministic** health checks on a schedule (default **once a day**) — no
+model tokens are spent unless a check actually fails:
 
-- **media-streaming** — verifies services (uses the project's health-check skill if
-  present, else `docker compose ps`).
-- **robot-mill** — `docker compose ps` + backend `health_check`.
-- **eurotrip-support** — tracks last-sync age; if >24h stale it runs the full sync
-  (`bun run all`) and records the new timestamp (self-remediating).
+- **media-streaming** / **robot-mill** — runs the project's `scripts/health-check.sh`
+  if present (exit 0 = OK, non-zero = FAIL, last stdout line = detail), else falls
+  back to parsing `docker compose ps --format json` (every service `running` and,
+  where a healthcheck exists, `healthy`). robot-mill's script also curls the backend
+  `health_check`.
+- **eurotrip-support** — tracks last-sync age; if stale (>24h) it runs `bun run all`
+  directly and records the new timestamp (self-remediating, no model).
+- **ai-provider** — hits the OpenRouter `/credits` and `/models` endpoints (free, no
+  tokens): flags a **low balance** (below `MIN_CREDITS_USD`, default `$10`) and warns
+  if `PI_MODEL` is missing from the provider catalog. This is the guard against a
+  runaway spend going unnoticed.
+
+**On failure** (`DIAGNOSE_ON_FAILURE=true`), the monitor escalates *once* to the
+low-cost service model (`SERVICE_PI_MODEL`, default `anthropic/claude-haiku-4.5`,
+billed to `OPENROUTER_API_KEY_SERVICE`) in a **fresh throwaway context** via the
+host-runner `/projects/:project/diagnose` endpoint. That agent diagnoses, attempts a
+safe fix (e.g. `docker compose restart`), re-checks, and reports a
+`HEALTH: OK`/`HEALTH: FAIL` verdict. The persistent interactive sessions are never
+touched, so context can't accumulate.
 
 Status is exposed at `http://127.0.0.1:3300/` (text) and `/health` (JSON). Intervals
-and thresholds are env-configurable (`CHECK_INTERVAL_MS`, `EUROTRIP_MAX_AGE_MS`, …).
+and thresholds are env-configurable (`CHECK_INTERVAL_MS`, `EUROTRIP_MAX_AGE_MS`,
+`MIN_CREDITS_USD`, `DIAGNOSE_ON_FAILURE`, `DIAGNOSE_TIMEOUT_MS`, …).
 Start: `health-monitor/start.sh` (tmux session `robot-mill-health`).
 
 ## Linear connector
 
 Polls a Linear status column and dispatches issues to agents.
 
-- Config: `~/robot-mill/linear-connector.env` (`LINEAR_API_KEY`, `LINEAR_TEAM_KEY`,
+- Config: `~/.envs/robot-mill/linear-connector.env` (`LINEAR_API_KEY`, `LINEAR_TEAM_KEY`,
   `LINEAR_TRIGGER_STATE`, `HOST_RUNNER_URL`, …).
 - Move an issue into the trigger column (default **"Agent Queue"**, auto-created)
   and label it with a target host project (e.g. `media-streaming`). The connector

@@ -1,8 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { CheckStatus, Verdict } from "./checks";
+import { providerCheck, runSync, serviceCheck } from "./checks";
 import type { Config } from "./config";
 
-export type CheckStatus = "ok" | "fail" | "error" | "unknown";
+export type { CheckStatus } from "./checks";
 
 export interface CheckResult {
 	name: string;
@@ -13,17 +15,10 @@ export interface CheckResult {
 	durationMs: number;
 }
 
-interface Pending {
-	resolve: (text: string) => void;
-	reject: (err: Error) => void;
-	timer: ReturnType<typeof setTimeout>;
-}
+const PROVIDER_CHECK = "ai-provider";
 
 export class Monitor {
 	private config: Config;
-	private ws: WebSocket | null = null;
-	private pending = new Map<string, Pending>();
-	private gen = new Map<string, number>();
 	private results = new Map<string, CheckResult>();
 
 	constructor(config: Config) {
@@ -31,12 +26,20 @@ export class Monitor {
 		mkdirSync(config.stateDir, { recursive: true });
 	}
 
+	private serviceProjects(): string[] {
+		return [this.config.mediaProject, this.config.robotProject];
+	}
+
+	private knownChecks(): string[] {
+		return [...this.serviceProjects(), this.config.eurotripProject, PROVIDER_CHECK];
+	}
+
 	private seedInitial(): void {
-		for (const project of [this.config.mediaProject, this.config.robotProject, this.config.eurotripProject]) {
-			if (this.results.has(project)) continue;
-			this.results.set(project, {
-				name: project,
-				project,
+		for (const name of this.knownChecks()) {
+			if (this.results.has(name)) continue;
+			this.results.set(name, {
+				name,
+				project: name,
 				status: "unknown",
 				detail: "waiting for first check…",
 				at: Date.now(),
@@ -47,102 +50,42 @@ export class Monitor {
 
 	start(): void {
 		this.seedInitial();
-		this.connect();
-		void this.runHealthCheck(this.config.mediaProject, mediaPrompt());
-		void this.runHealthCheck(this.config.robotProject, robotPrompt());
-		void this.runEurotripCheck();
+		void this.runAll();
+		setInterval(() => void this.runAll(), this.config.checkIntervalMs);
+	}
 
-		setInterval(() => {
-			void this.runHealthCheck(this.config.mediaProject, mediaPrompt());
-			void this.runHealthCheck(this.config.robotProject, robotPrompt());
-		}, this.config.checkIntervalMs);
-		setInterval(() => void this.runEurotripCheck(), this.config.eurotripCheckIntervalMs);
+	private async runAll(): Promise<void> {
+		await Promise.all([
+			...this.serviceProjects().map((p) => this.runServiceCheck(p)),
+			this.runEurotripCheck(),
+			this.runProviderCheck(),
+		]);
 	}
 
 	snapshot(): CheckResult[] {
 		return [...this.results.values()].sort((a, b) => a.name.localeCompare(b.name));
 	}
 
-	async recheck(project: string): Promise<CheckResult | null> {
-		const known = [this.config.mediaProject, this.config.robotProject, this.config.eurotripProject];
-		if (!known.includes(project)) return null;
-		this.results.set(project, {
-			name: project,
-			project,
+	async recheck(name: string): Promise<CheckResult | null> {
+		if (!this.knownChecks().includes(name)) return null;
+		this.results.set(name, {
+			name,
+			project: name,
 			status: "unknown",
 			detail: "re-checking…",
 			at: Date.now(),
 			durationMs: 0,
 		});
-		if (project === this.config.mediaProject) {
-			await this.runHealthCheck(project, mediaPrompt());
-		} else if (project === this.config.robotProject) {
-			await this.runHealthCheck(project, robotPrompt());
-		} else {
-			await this.runEurotripCheck();
-		}
-		return this.results.get(project) ?? null;
+		if (this.serviceProjects().includes(name)) await this.runServiceCheck(name);
+		else if (name === this.config.eurotripProject) await this.runEurotripCheck();
+		else await this.runProviderCheck();
+		return this.results.get(name) ?? null;
 	}
 
-	private connect(): void {
-		this.ws = new WebSocket(this.config.hostRunnerWsUrl);
-		this.ws.onopen = () => console.log(`connected to host-runner ${this.config.hostRunnerWsUrl}`);
-		this.ws.onmessage = (ev) => {
-			try {
-				const msg = JSON.parse(ev.data as string);
-				if (msg.type === "message_complete" && typeof msg.project === "string") {
-					const p = this.pending.get(msg.project);
-					if (p) {
-						clearTimeout(p.timer);
-						this.pending.delete(msg.project);
-						p.resolve(String(msg.data ?? ""));
-					}
-				}
-			} catch {
-				// ignore
-			}
-		};
-		this.ws.onclose = () => {
-			console.warn("host-runner WS closed; reconnecting in 3s");
-			setTimeout(() => this.connect(), 3000);
-		};
-		this.ws.onerror = () => this.ws?.close();
-	}
-
-	private async prompt(project: string, message: string): Promise<string> {
-		const existing = this.pending.get(project);
-		if (existing) {
-			clearTimeout(existing.timer);
-			this.pending.delete(project);
-			existing.reject(new Error("superseded by a newer check"));
-		}
-		const completion = new Promise<string>((resolve, reject) => {
-			const timer = setTimeout(() => {
-				this.pending.delete(project);
-				reject(new Error("timed out waiting for agent"));
-			}, this.config.promptTimeoutMs);
-			this.pending.set(project, { resolve, reject, timer });
-		});
-		const res = await fetch(`${this.config.hostRunnerUrl}/projects/${encodeURIComponent(project)}/prompt`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ message }),
-		});
-		if (!res.ok) {
-			const p = this.pending.get(project);
-			if (p) {
-				clearTimeout(p.timer);
-				this.pending.delete(project);
-			}
-			throw new Error(`host-runner prompt failed (${res.status})`);
-		}
-		return completion;
-	}
-
-	private record(name: string, project: string, status: CheckStatus, detail: string, startedAt: number): void {
+	private record(name: string, status: CheckStatus, detail: string, startedAt: number): void {
 		this.results.set(name, {
 			name,
-			project,
+			project: name,
 			status,
 			detail: detail.slice(0, 2000),
 			at: Date.now(),
@@ -151,56 +94,87 @@ export class Monitor {
 		console.log(`[${name}] ${status.toUpperCase()} — ${detail.slice(0, 160).replace(/\n/g, " ")}`);
 	}
 
-	private async runHealthCheck(project: string, prompt: string): Promise<void> {
+	private async runServiceCheck(project: string): Promise<void> {
 		const startedAt = Date.now();
-		const myGen = (this.gen.get(project) ?? 0) + 1;
-		this.gen.set(project, myGen);
+		const dir = join(this.config.projectsDir, project);
+		const verdict = serviceCheck(dir, this.config.checkTimeoutMs);
+		if (verdict.status !== "fail" || !this.config.diagnoseOnFailure) {
+			this.record(project, verdict.status, verdict.detail, startedAt);
+			return;
+		}
+		this.record(project, verdict.status, `${verdict.detail} — diagnosing…`, startedAt);
+		const fixed = await this.diagnose(project, verdict.detail);
+		this.record(project, fixed.status, `was: ${verdict.detail}\nfix: ${fixed.detail}`, startedAt);
+	}
+
+	private async diagnose(project: string, failure: string): Promise<Verdict> {
+		const message = [
+			`A deterministic health check for "${project}" just FAILED: ${failure}`,
+			"You are in the project directory on the host with full access.",
+			"Investigate, attempt a SAFE fix (e.g. restart the affected service with `docker compose up -d` or `docker compose restart <service>`),",
+			"then re-run the check to confirm. Do not make risky or destructive changes.",
+			"Reply with a single final line: `HEALTH: OK - <what you fixed>` if resolved,",
+			"or `HEALTH: FAIL - <root cause + what needs manual attention>` if not.",
+		].join(" ");
 		try {
-			const text = await this.prompt(project, prompt);
-			if (this.gen.get(project) !== myGen) return;
-			const verdict = parseVerdict(text);
-			this.record(project, project, verdict.status, verdict.detail, startedAt);
+			const res = await fetch(
+				`${this.config.hostRunnerUrl}/projects/${encodeURIComponent(project)}/diagnose`,
+				{
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ message, timeoutMs: this.config.diagnoseTimeoutMs }),
+					signal: AbortSignal.timeout(this.config.diagnoseTimeoutMs + 30000),
+				},
+			);
+			if (!res.ok) return { status: "fail", detail: `diagnosis unavailable (host-runner ${res.status})` };
+			const body = (await res.json()) as { text?: string };
+			return parseVerdict(body.text ?? "");
 		} catch (err) {
-			if (this.gen.get(project) !== myGen) return;
-			this.record(project, project, "error", err instanceof Error ? err.message : "unknown", startedAt);
+			return { status: "error", detail: err instanceof Error ? err.message : "diagnosis failed" };
 		}
 	}
 
 	private async runEurotripCheck(): Promise<void> {
 		const project = this.config.eurotripProject;
 		const startedAt = Date.now();
-		const myGen = (this.gen.get(project) ?? 0) + 1;
-		this.gen.set(project, myGen);
 		const marker = join(this.config.stateDir, "eurotrip-last-sync");
 		const lastSync = readTimestamp(marker);
 		const ageMs = lastSync ? Date.now() - lastSync : Number.POSITIVE_INFINITY;
 
 		if (ageMs <= this.config.eurotripMaxAgeMs) {
 			const hours = Math.round(ageMs / 3_600_000);
-			this.record(project, project, "ok", `last sync ${hours}h ago (fresh)`, startedAt);
+			this.record(project, "ok", `last sync ${hours}h ago (fresh)`, startedAt);
 			return;
 		}
 
-		try {
-			const text = await this.prompt(project, eurotripSyncPrompt());
-			if (this.gen.get(project) !== myGen) return;
-			const verdict = parseVerdict(text);
-			if (verdict.status === "ok") {
-				writeFileSync(marker, String(Date.now()));
-				this.record(project, project, "ok", `stale — ran full sync: ${verdict.detail}`, startedAt);
-			} else {
-				this.record(project, project, "fail", `sync failed: ${verdict.detail}`, startedAt);
-			}
-		} catch (err) {
-			if (this.gen.get(project) !== myGen) return;
-			this.record(project, project, "error", err instanceof Error ? err.message : "unknown", startedAt);
+		const dir = join(this.config.projectsDir, project);
+		if (!existsSync(dir)) {
+			this.record(project, "error", `project dir not found: ${dir}`, startedAt);
+			return;
 		}
+		const verdict = runSync(dir, this.config.syncTimeoutMs);
+		if (verdict.status === "ok") {
+			writeFileSync(marker, String(Date.now()));
+			this.record(project, "ok", `stale — ran full sync: ${verdict.detail}`, startedAt);
+		} else {
+			this.record(project, "fail", `sync failed: ${verdict.detail}`, startedAt);
+		}
+	}
+
+	private async runProviderCheck(): Promise<void> {
+		const startedAt = Date.now();
+		const verdict = await providerCheck(
+			this.config.providerKey,
+			this.config.piModel,
+			this.config.minCreditsUsd,
+		);
+		this.record(PROVIDER_CHECK, verdict.status, verdict.detail, startedAt);
 	}
 }
 
-function parseVerdict(text: string): { status: CheckStatus; detail: string } {
+function parseVerdict(text: string): Verdict {
 	const match = text.match(/HEALTH:\s*(OK|FAIL)\b[ \t-]*(.*)/i);
-	if (!match) return { status: "unknown", detail: text.trim().slice(0, 500) };
+	if (!match) return { status: "unknown", detail: text.trim().slice(0, 500) || "no verdict returned" };
 	return {
 		status: match[1].toUpperCase() === "OK" ? "ok" : "fail",
 		detail: (match[2] || "").trim() || text.trim().slice(0, 500),
@@ -215,28 +189,4 @@ function readTimestamp(path: string): number | null {
 	} catch {
 		return null;
 	}
-}
-
-function mediaPrompt(): string {
-	return [
-		"Health check for the media stack. If this project has a health-check skill, use it.",
-		"Otherwise run `docker compose ps` and verify every service is Up (and healthy where a healthcheck exists).",
-		"Reply with a single final line: `HEALTH: OK` if all good, or `HEALTH: FAIL - <which services and why>`.",
-	].join(" ");
-}
-
-function robotPrompt(): string {
-	return [
-		"Health check for robot-mill. Run `docker compose ps` and `curl -fsS http://127.0.0.1:3100/health_check`.",
-		"Reply with a single final line: `HEALTH: OK` if the backend returns ok and containers are Up,",
-		"or `HEALTH: FAIL - <reason>`.",
-	].join(" ");
-}
-
-function eurotripSyncPrompt(): string {
-	return [
-		"The eurotrip-support data is stale (>24h since last sync). Run the full sync now: `bun run all`.",
-		"Wait for it to finish. Reply with a single final line: `HEALTH: OK - <one-line summary>` if it completed,",
-		"or `HEALTH: FAIL - <error>` if it failed.",
-	].join(" ");
 }

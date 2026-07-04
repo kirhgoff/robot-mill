@@ -16,6 +16,13 @@ export interface SessionOutput {
 	timestamp: number;
 }
 
+export interface SessionOverride {
+	provider?: string;
+	model?: string;
+	keyEnv?: string;
+	keyValue?: string;
+}
+
 function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -26,16 +33,18 @@ export class PiSession extends EventEmitter {
 	private readonly socketPath: string;
 	private readonly sessionFile: string;
 	private readonly config: Config;
+	private readonly override: SessionOverride;
 	private socket: Socket | null = null;
 	private buffer = "";
 	private pendingText = "";
 	private connecting: Promise<void> | null = null;
 
-	constructor(project: string, dir: string, config: Config) {
+	constructor(project: string, dir: string, config: Config, override: SessionOverride = {}) {
 		super();
 		this.project = project;
 		this.dir = dir;
 		this.config = config;
+		this.override = override;
 		this.socketPath = join(config.stateDir, "sockets", `${project}.sock`);
 		this.sessionFile = join(config.stateDir, "sessions", `${project}.json`);
 	}
@@ -53,6 +62,10 @@ export class PiSession extends EventEmitter {
 
 	private async doEnsure(): Promise<void> {
 		if (!hasSession(this.project)) {
+			const provider = this.override.provider ?? this.config.piProvider;
+			const model = this.override.model ?? this.config.piModel;
+			const keyEnv = this.override.keyEnv ?? this.config.providerKeyEnv;
+			const keyValue = this.override.keyValue ?? this.config.providerKey;
 			const command = [
 				shellQuote(bunPath),
 				"run",
@@ -64,16 +77,16 @@ export class PiSession extends EventEmitter {
 				"--session",
 				shellQuote(this.sessionFile),
 				"--provider",
-				shellQuote(this.config.piProvider),
+				shellQuote(provider),
 			];
-			if (this.config.piModel) {
-				command.push("--model", shellQuote(this.config.piModel));
+			if (model) {
+				command.push("--model", shellQuote(model));
 			}
 			const envVars: Record<string, string> = {
 				PATH: process.env.PATH ?? "",
-				PI_PROVIDER: this.config.piProvider,
-				PI_MODEL: this.config.piModel,
-				[this.config.providerKeyEnv]: process.env[this.config.providerKeyEnv] ?? "",
+				PI_PROVIDER: provider,
+				PI_MODEL: model,
+				[keyEnv]: keyValue,
 			};
 			if (this.config.githubToken) {
 				envVars.GITHUB_TOKEN = this.config.githubToken;
@@ -197,6 +210,26 @@ export class PiSession extends EventEmitter {
 		this.write({ type: "prompt", message });
 	}
 
+	async runOnce(message: string, timeoutMs: number): Promise<string> {
+		await this.ensure();
+		return new Promise<string>((resolve, reject) => {
+			const onComplete = (text: string) => {
+				cleanup();
+				resolve(text);
+			};
+			const timer = setTimeout(() => {
+				cleanup();
+				reject(new Error("diagnosis timed out"));
+			}, timeoutMs);
+			const cleanup = () => {
+				clearTimeout(timer);
+				this.off("message_complete", onComplete);
+			};
+			this.once("message_complete", onComplete);
+			this.prompt(message);
+		});
+	}
+
 	abort(): void {
 		this.write({ type: "abort" });
 	}
@@ -211,6 +244,12 @@ export class PiSession extends EventEmitter {
 		this.socket = null;
 		killSession(this.project);
 		this.removeSocketFile();
+	}
+
+	removeSessionFile(): void {
+		try {
+			unlinkSync(this.sessionFile);
+		} catch {}
 	}
 
 	private removeSocketFile(): void {
@@ -243,10 +282,28 @@ export class PiSession extends EventEmitter {
 export class PiSessionManager extends EventEmitter {
 	private sessions = new Map<string, PiSession>();
 	private config: Config;
+	private diagCounter = 0;
 
 	constructor(config: Config) {
 		super();
 		this.config = config;
+	}
+
+	async diagnose(project: string, message: string, timeoutMs: number): Promise<string> {
+		const dir = join(this.config.projectsDir, project);
+		const key = `diag-${project}-${++this.diagCounter}`;
+		const session = new PiSession(key, dir, this.config, {
+			provider: this.config.serviceProvider,
+			model: this.config.serviceModel,
+			keyEnv: this.config.serviceKeyEnv,
+			keyValue: this.config.serviceKey,
+		});
+		try {
+			return await session.runOnce(message, timeoutMs);
+		} finally {
+			session.kill();
+			session.removeSessionFile();
+		}
 	}
 
 	isAllowed(project: string): boolean {
@@ -269,7 +326,10 @@ export class PiSessionManager extends EventEmitter {
 		const baseDir = join(this.config.projectsDir, project);
 		const dir = worktreePath(this.config.projectsDir, project, branch);
 		ensureWorktree(baseDir, dir, branch);
-		return this.ensureSession(taskId(project, branch), dir);
+		return this.ensureSession(taskId(project, branch), dir, {
+			keyEnv: this.config.providerKeyEnv,
+			keyValue: this.config.taskKey,
+		});
 	}
 
 	async restart(project: string): Promise<PiSession> {
@@ -288,10 +348,14 @@ export class PiSessionManager extends EventEmitter {
 		);
 	}
 
-	private async ensureSession(key: string, dir: string): Promise<PiSession> {
+	private async ensureSession(
+		key: string,
+		dir: string,
+		override: SessionOverride = {},
+	): Promise<PiSession> {
 		let session = this.sessions.get(key);
 		if (!session) {
-			session = new PiSession(key, dir, this.config);
+			session = new PiSession(key, dir, this.config, override);
 			session.on("output", (output: SessionOutput) => this.emit("output", output));
 			session.on("message_complete", (text: string) =>
 				this.emit("message_complete", { project: key, text }),
