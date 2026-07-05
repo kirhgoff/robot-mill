@@ -9,16 +9,25 @@ export interface Verdict {
 	detail: string;
 }
 
-function run(cmd: string, args: string[], cwd: string, timeoutMs: number): { code: number; out: string } {
+interface RunResult {
+	code: number;
+	stdout: string;
+	stderr: string;
+}
+
+function run(cmd: string, args: string[], cwd: string, timeoutMs: number): RunResult {
 	const res = spawnSync(cmd, args, { cwd, encoding: "utf-8", timeout: timeoutMs });
-	const out = `${res.stdout ?? ""}${res.stderr ?? ""}`.trim();
-	if (res.error) return { code: 1, out: res.error.message };
-	return { code: res.status ?? 1, out };
+	if (res.error) return { code: 1, stdout: "", stderr: res.error.message };
+	return { code: res.status ?? 1, stdout: (res.stdout ?? "").trim(), stderr: (res.stderr ?? "").trim() };
 }
 
 function lastLine(text: string): string {
 	const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 	return lines[lines.length - 1] ?? "";
+}
+
+function detailFrom(res: RunResult): string {
+	return lastLine(res.stdout) || lastLine(res.stderr);
 }
 
 export function serviceCheck(projectDir: string, timeoutMs: number): Verdict {
@@ -28,7 +37,7 @@ export function serviceCheck(projectDir: string, timeoutMs: number): Verdict {
 	const script = join(projectDir, "scripts", "health-check.sh");
 	if (existsSync(script)) {
 		const res = run("bash", [script], projectDir, timeoutMs);
-		const detail = lastLine(res.out) || (res.code === 0 ? "ok" : "check failed");
+		const detail = detailFrom(res) || (res.code === 0 ? "ok" : "check failed");
 		return { status: res.code === 0 ? "ok" : "fail", detail };
 	}
 	return dockerComposeCheck(projectDir, timeoutMs);
@@ -66,9 +75,9 @@ function parseCompose(out: string): ComposeService[] {
 export function dockerComposeCheck(projectDir: string, timeoutMs: number): Verdict {
 	const res = run("docker", ["compose", "ps", "--format", "json"], projectDir, timeoutMs);
 	if (res.code !== 0) {
-		return { status: "fail", detail: `docker compose ps failed: ${lastLine(res.out)}` };
+		return { status: "fail", detail: `docker compose ps failed: ${detailFrom(res)}` };
 	}
-	const services = parseCompose(res.out);
+	const services = parseCompose(res.stdout);
 	if (services.length === 0) {
 		return { status: "fail", detail: "no services running" };
 	}
@@ -88,7 +97,7 @@ export function runSync(projectDir: string, timeoutMs: number): Verdict {
 	const res = run("bun", ["run", "all"], projectDir, timeoutMs);
 	return {
 		status: res.code === 0 ? "ok" : "fail",
-		detail: lastLine(res.out) || (res.code === 0 ? "sync completed" : "sync failed"),
+		detail: detailFrom(res) || (res.code === 0 ? "sync completed" : "sync failed"),
 	};
 }
 
