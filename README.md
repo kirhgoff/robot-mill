@@ -205,7 +205,7 @@ Setup:
 ## Web console + homepage
 
 A mobile-friendly UI served by the backend at the **site root** — both
-**`http://<host>/`** and **`http://<host>:3100/console`**. It has two title
+**`http://<host>/`** and **`http://<host>:3100/console`**. It has three title
 tabs in the header:
 
 - **poop house** (selected by default) — a happy dashboard of links to all
@@ -215,8 +215,10 @@ tabs in the header:
   runners (with a per-project prompt box), container agents, and system status,
   auto-refreshing every 5s, with switchable themes (cyberpunk / matrix / amber /
   synthwave).
+- **nightcrawler** — a night/neon landing page linking to the nightcrawler
+  full-text search UI (`:3030`).
 
-The inactive title tab is dimmed but tappable to switch views; the selection is
+Inactive title tabs are dimmed but tappable to switch views; the selection is
 remembered in `localStorage`. The homepage is exposed on port 80 via
 `HOMEPAGE_PORT` in `docker-compose.yml`.
 
