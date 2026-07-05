@@ -133,6 +133,32 @@
   .ph-optional .ph-card { background: rgba(255,255,255,0.035); }
   .ph-optional .ph-icon { background: rgba(255,255,255,0.1); }
   .ph-foot { text-align: center; margin-top: 2rem; opacity: 0.6; font-size: 0.9rem; }
+
+  body.nc { background: linear-gradient(155deg, #0a0a1f 0%, #241046 100%); color: #e7e0ff; }
+  body.nc header { background: rgba(255,255,255,0.05); border-color: rgba(160,120,255,0.25); }
+  .ttab[data-view="nightcrawler"].active { color: #c4b5fd; text-shadow: 0 0 12px rgba(139,92,246,0.55); }
+  body.nc .ttab { color: rgba(231,224,255,0.55); }
+  body.nc .ttab:hover { color: #e7e0ff; }
+  body.nc .ttab.active { color: #e7e0ff; background: rgba(255,255,255,0.07); border-color: rgba(160,120,255,0.25);
+    text-shadow: 0 0 12px rgba(139,92,246,0.5); }
+  #view-nightcrawler { font-family: var(--ph-sans); }
+  .nc-hero { text-align: center; margin: 4px 0 26px; }
+  .nc-hero h1 { font-size: clamp(2rem, 5vw, 2.8rem); margin: 0; color: #c4b5fd;
+    text-shadow: 0 0 22px rgba(139,92,246,0.55); letter-spacing: 1px; }
+  .nc-hero p { margin: 6px 0 0; opacity: 0.75; font-size: 1rem; }
+  .nc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
+  .nc-card { background: rgba(139,92,246,0.08); border: 1px solid rgba(160,120,255,0.22); border-radius: 16px;
+    padding: 1.1rem 1.2rem; text-decoration: none; color: inherit; display: block;
+    transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease; }
+  .nc-card:hover { transform: translateY(-5px); border-color: #8b5cf6; background: rgba(139,92,246,0.16);
+    box-shadow: 0 14px 40px rgba(0,0,0,0.45), 0 0 0 1px rgba(139,92,246,0.35); }
+  .nc-card-head { display: flex; align-items: center; gap: 0.85rem; margin-bottom: 0.6rem; }
+  .nc-icon { font-size: 1.55rem; width: 46px; height: 46px; flex: none; display: flex; align-items: center;
+    justify-content: center; background: rgba(139,92,246,0.2); border-radius: 12px; }
+  .nc-title { font-size: 1.1rem; font-weight: 700; }
+  .nc-port { font-size: 0.78rem; color: #c4b5fd; font-family: var(--font); }
+  .nc-desc { opacity: 0.8; font-size: 0.88rem; margin: 0; }
+  .nc-foot { text-align: center; margin-top: 2rem; opacity: 0.6; font-size: 0.9rem; }
 </style>
 </head>
 <body>
@@ -140,6 +166,7 @@
   <nav class="titletabs">
     <button class="ttab" data-view="robotmill" title="robot mill console">robot mill</button>
     <button class="ttab active" data-view="poophouse" title="poop house dashboard"><span class="ph-emoji">🏠</span> poop house</button>
+    <button class="ttab" data-view="nightcrawler" title="nightcrawler search"><span class="ph-emoji">🕷️</span> nightcrawler</button>
   </nav>
 
   <header id="rmHeader">
@@ -215,6 +242,17 @@
     <div class="ph-foot">All downloads routed through VPN 🔒</div>
   </div>
 
+  <div class="view" id="view-nightcrawler">
+    <div class="nc-hero">
+      <h1>nightcrawler</h1>
+      <p>🕷️ Melbourne listings, crawled after dark</p>
+    </div>
+    <div class="nc-grid">
+      <a data-port="3030" class="nc-card"><div class="nc-card-head"><div class="nc-icon">🔍</div><div><div class="nc-title">Search</div><div class="nc-port">:3030</div></div></div><p class="nc-desc">Search discovered Melbourne listings</p></a>
+    </div>
+    <div class="nc-foot">Full-text search over manually onboarded sources</div>
+  </div>
+
   <div class="foot" id="foot">robot-mill console · <span id="clock"></span></div>
 </div>
 
@@ -223,19 +261,24 @@ function setView(view){
   document.querySelectorAll(".ttab").forEach(el => el.classList.toggle("active", el.dataset.view === view));
   document.getElementById("view-robotmill").classList.toggle("active", view === "robotmill");
   document.getElementById("view-poophouse").classList.toggle("active", view === "poophouse");
+  document.getElementById("view-nightcrawler").classList.toggle("active", view === "nightcrawler");
   const ph = view === "poophouse";
+  const nc = view === "nightcrawler";
+  const landing = ph || nc;
   document.body.classList.toggle("ph", ph);
-  document.getElementById("rmHeader").style.display = ph ? "none" : "block";
-  document.getElementById("foot").style.display = ph ? "none" : "block";
-  document.title = ph ? "poop house" : "robot-mill // console";
+  document.body.classList.toggle("nc", nc);
+  document.getElementById("rmHeader").style.display = landing ? "none" : "block";
+  document.getElementById("foot").style.display = landing ? "none" : "block";
+  document.title = ph ? "poop house" : nc ? "nightcrawler" : "robot-mill // console";
   localStorage.setItem("rm-view", view);
-  document.querySelector('meta[name=theme-color]').setAttribute("content", ph ? "#012a5e" : (THEMES[themeSel.value]||THEMES.cyberpunk)["--bg"]);
+  const themeColor = ph ? "#012a5e" : nc ? "#0a0a1f" : (THEMES[themeSel.value]||THEMES.cyberpunk)["--bg"];
+  document.querySelector('meta[name=theme-color]').setAttribute("content", themeColor);
 }
 document.querySelectorAll(".ttab").forEach(el => el.onclick = () => setView(el.dataset.view));
 
 // poop house links: build from current hostname (works on LAN, Tailscale, etc.)
 const phHost = window.location.hostname;
-document.querySelectorAll('#view-poophouse a[data-port]').forEach(link => {
+document.querySelectorAll('a[data-port]').forEach(link => {
   link.href = `http://${phHost}:${link.getAttribute("data-port")}`;
 });
 
@@ -249,7 +292,7 @@ const THEMES = {
 function applyTheme(name) {
   const t = THEMES[name] || THEMES.cyberpunk;
   for (const k in t) if (k.startsWith("--")) document.documentElement.style.setProperty(k, t[k]);
-  if (!document.body.classList.contains("ph")) document.querySelector('meta[name=theme-color]').setAttribute("content", t["--bg"]);
+  if (!document.body.classList.contains("ph") && !document.body.classList.contains("nc")) document.querySelector('meta[name=theme-color]').setAttribute("content", t["--bg"]);
   localStorage.setItem("rm-theme", name);
 }
 
