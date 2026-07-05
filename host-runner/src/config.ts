@@ -10,7 +10,6 @@ export interface Config {
 	piModel: string;
 	providerKeyEnv: string;
 	providerKey: string;
-	taskKey: string;
 	serviceProvider: string;
 	serviceModel: string;
 	serviceKeyEnv: string;
@@ -41,8 +40,7 @@ function resolveKey(provider: string, suffix: string): { env: string; value: str
 export function loadConfig(): Config {
 	const piProvider = env("PI_PROVIDER", "openrouter");
 	const serviceProvider = env("SERVICE_PI_PROVIDER", piProvider);
-	const providerKey = resolveKey(piProvider, "HOSTRUNNER");
-	const taskKey = resolveKey(piProvider, "LINEAR");
+	const providerKeyEnv = keyEnvFor(piProvider);
 	const serviceKey = resolveKey(serviceProvider, "SERVICE");
 	return {
 		host: env("HOST_RUNNER_HOST", "0.0.0.0"),
@@ -55,9 +53,8 @@ export function loadConfig(): Config {
 			.filter(Boolean),
 		piProvider,
 		piModel: env("PI_MODEL"),
-		providerKeyEnv: providerKey.env,
-		providerKey: providerKey.value,
-		taskKey: taskKey.value,
+		providerKeyEnv,
+		providerKey: process.env[providerKeyEnv] ?? "",
 		serviceProvider,
 		serviceModel: env("SERVICE_PI_MODEL", "anthropic/claude-haiku-4.5"),
 		serviceKeyEnv: serviceKey.env,
@@ -66,11 +63,16 @@ export function loadConfig(): Config {
 	};
 }
 
+export function projectKeyValue(config: Config, project: string): string {
+	const suffix = project.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+	return process.env[`${config.providerKeyEnv}_${suffix}`] ?? config.providerKey;
+}
+
 export function validateConfig(config: Config): string[] {
 	const errors: string[] = [];
 	if (!config.providerKey) {
 		errors.push(
-			`${config.providerKeyEnv} (or ${config.providerKeyEnv}_HOSTRUNNER) is required for PI_PROVIDER=${config.piProvider}`,
+			`${config.providerKeyEnv} is required (shared fallback for per-project ${config.providerKeyEnv}_<PROJECT> keys) for PI_PROVIDER=${config.piProvider}`,
 		);
 	}
 	if (!config.port || config.port < 1 || config.port > 65535) {

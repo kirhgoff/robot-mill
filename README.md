@@ -60,17 +60,16 @@ for the selected provider:
 OpenRouter serves both Claude and GPT models, so a single `OPENROUTER_API_KEY` covers
 both with the `provider/id` model slug.
 
-### Per-system keys (cost attribution)
+### Per-key cost attribution
 
-Each system can use its own key so OpenRouter reports cost per system. Any unset
-per-system key **falls back to the shared `OPENROUTER_API_KEY`** (`ANTHROPIC_`/`OPENAI_`
+Slices of work can each use their own key so OpenRouter reports cost per slice. Any
+unset key **falls back to the shared `OPENROUTER_API_KEY`** (`ANTHROPIC_`/`OPENAI_`
 prefixes work the same way for those providers):
 
-| Env var | System | Set in |
+| Env var | Bills for | Set in |
 |---|---|---|
 | `OPENROUTER_API_KEY_BACKEND` | container workspace agents (incl. Telegram/Discord) | compose `.env` |
-| `OPENROUTER_API_KEY_HOSTRUNNER` | interactive `/project` agents | `host-runner.env` |
-| `OPENROUTER_API_KEY_LINEAR` | Linear ticket agents (host-runner `/task`) | `host-runner.env` |
+| `OPENROUTER_API_KEY_<PROJECT>` | host-runner agents for that repo — **both** interactive `/project` and Linear `/task` runs. Name = uppercased repo with non-alphanumerics as `_` (e.g. `media-streaming` → `OPENROUTER_API_KEY_MEDIA_STREAMING`) | `host-runner.env` |
 | `OPENROUTER_API_KEY_SERVICE` | low-cost diagnostic/technical model | `host-runner.env`, `health-monitor.env` |
 
 ### Service model
@@ -235,8 +234,8 @@ session per real project on the host, each inside a tmux session named
 
 - Config: `~/.envs/robot-mill/host-runner.env` (`HOST_RUNNER_PORT`, `PROJECTS_DIR`,
   `ALLOWED_PROJECTS`, `PI_PROVIDER`, `PI_MODEL`, `SERVICE_PI_MODEL`, provider keys
-  — `OPENROUTER_API_KEY` plus optional `_HOSTRUNNER`/`_LINEAR`/`_SERVICE` splits,
-  `GITHUB_TOKEN`).
+  — `OPENROUTER_API_KEY` plus optional per-repo `OPENROUTER_API_KEY_<PROJECT>` and
+  `_SERVICE` splits, `GITHUB_TOKEN`).
 - Start: `host-runner/start.sh` (launches tmux session `robot-mill-host-runner`).
 - Drive from Telegram with `/project <name>`; observe/steer with
   `host-runner/attach.sh <project>` (i.e. `tmux attach -t pi-<project>`).
@@ -268,7 +267,7 @@ model tokens are spent unless a check actually fails:
   `health_check`.
 - **eurotrip-support** — tracks last-sync age; if stale (>24h) it runs `bun run all`
   directly and records the new timestamp (self-remediating, no model).
-- **ai-provider** — hits the OpenRouter `/credits` and `/models` endpoints (free, no
+- **openrouter** — hits the OpenRouter `/credits` and `/models` endpoints (free, no
   tokens): flags a **low balance** (below `MIN_CREDITS_USD`, default `$10`) and warns
   if `PI_MODEL` is missing from the provider catalog. This is the guard against a
   runaway spend going unnoticed.
