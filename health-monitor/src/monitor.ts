@@ -15,7 +15,7 @@ export interface CheckResult {
 	durationMs: number;
 }
 
-const PROVIDER_CHECK = "ai-provider";
+const PROVIDER_CHECK = "openrouter";
 
 export class Monitor {
 	private config: Config;

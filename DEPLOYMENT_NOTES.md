@@ -48,11 +48,11 @@ AI provider:
 - `PI_PROVIDER=openrouter` with `PI_MODEL=anthropic/claude-opus-4.8` routes through OpenRouter (key in `OPENROUTER_API_KEY`).
 - `pi` inherits the backend container's env, so any provider key added to the backend `environment:` block reaches the agent.
 
-Per-system keys & service model:
+Per-key cost attribution & service model:
 
-- Each system can bill to its own key for cost attribution; any unset per-system key falls back to the shared `OPENROUTER_API_KEY`, so nothing breaks if they're absent:
+- Slices of work can bill to their own key; any unset key falls back to the shared `OPENROUTER_API_KEY`, so nothing breaks if they're absent:
   - `OPENROUTER_API_KEY_BACKEND` — container agents → compose `.env` (`~/.envs/robot-mill/.env`).
-  - `OPENROUTER_API_KEY_HOSTRUNNER` (interactive `/project`) and `OPENROUTER_API_KEY_LINEAR` (Linear `/task` agents) → `~/.envs/robot-mill/host-runner.env`.
+  - `OPENROUTER_API_KEY_<PROJECT>` — per-repo host-runner agents (both interactive `/project` and Linear `/task`), named by uppercased repo with non-alphanumerics as `_` (e.g. `media-streaming` → `OPENROUTER_API_KEY_MEDIA_STREAMING`, `eurotrip-support` → `OPENROUTER_API_KEY_EUROTRIP_SUPPORT`) → `~/.envs/robot-mill/host-runner.env`.
   - `OPENROUTER_API_KEY_SERVICE` — low-cost diagnostic model → `host-runner.env` **and** `health-monitor.env`.
 - `SERVICE_PI_MODEL` (default `anthropic/claude-haiku-4.5`) is the low-cost model the health-monitor uses when a check fails (diagnose + safe auto-fix). Set it in `host-runner.env`.
 - **Health-monitor balance check:** the monitor's `ai-provider` check (OpenRouter `/credits` low-balance alert + `/models` availability, both free) needs a key in its own env. Create `~/.envs/robot-mill/health-monitor.env` with at least `OPENROUTER_API_KEY=sk-or-...` (or `OPENROUTER_API_KEY_SERVICE=...`); `start.sh` picks it up automatically. Without it the check degrades to `unknown`. Tune with `MIN_CREDITS_USD` (default `10`) and `DIAGNOSE_ON_FAILURE` (default `true`).

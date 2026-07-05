@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { connect, type Socket } from "node:net";
 import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import type { Config } from "./config";
+import { type Config, projectKeyValue } from "./config";
 import { hasSession, killSession, newSession } from "./tmux";
 import { ensureWorktree, removeWorktree, taskId, worktreePath } from "./worktree";
 
@@ -319,7 +319,10 @@ export class PiSessionManager extends EventEmitter {
 	}
 
 	async get(project: string): Promise<PiSession> {
-		return this.ensureSession(project, join(this.config.projectsDir, project));
+		return this.ensureSession(project, join(this.config.projectsDir, project), {
+			keyEnv: this.config.providerKeyEnv,
+			keyValue: projectKeyValue(this.config, project),
+		});
 	}
 
 	async getTask(project: string, branch: string): Promise<PiSession> {
@@ -328,7 +331,7 @@ export class PiSessionManager extends EventEmitter {
 		ensureWorktree(baseDir, dir, branch);
 		return this.ensureSession(taskId(project, branch), dir, {
 			keyEnv: this.config.providerKeyEnv,
-			keyValue: this.config.taskKey,
+			keyValue: projectKeyValue(this.config, project),
 		});
 	}
 
