@@ -30,6 +30,15 @@ function detailFrom(res: RunResult): string {
 	return lastLine(res.stdout) || lastLine(res.stderr);
 }
 
+function meaningfulTail(res: RunResult, maxLines = 4): string {
+	const noise = /^(\$ |error: script ")/;
+	const lines = `${res.stdout}\n${res.stderr}`
+		.split("\n")
+		.map((l) => l.trim())
+		.filter((l) => l && !noise.test(l));
+	return lines.slice(-maxLines).join(" · ");
+}
+
 export function serviceCheck(projectDir: string, timeoutMs: number): Verdict {
 	if (!existsSync(projectDir)) {
 		return { status: "error", detail: `project dir not found: ${projectDir}` };
@@ -95,10 +104,10 @@ export function dockerComposeCheck(projectDir: string, timeoutMs: number): Verdi
 
 export function runSync(projectDir: string, timeoutMs: number): Verdict {
 	const res = run("bun", ["run", "all"], projectDir, timeoutMs);
-	return {
-		status: res.code === 0 ? "ok" : "fail",
-		detail: detailFrom(res) || (res.code === 0 ? "sync completed" : "sync failed"),
-	};
+	if (res.code === 0) {
+		return { status: "ok", detail: detailFrom(res) || "sync completed" };
+	}
+	return { status: "fail", detail: meaningfulTail(res) || "sync failed" };
 }
 
 export interface ProviderVerdict extends Verdict {
