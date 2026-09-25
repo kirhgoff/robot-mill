@@ -5,6 +5,8 @@ export interface Config {
 	port: number;
 	projectsDir: string;
 	stateDir: string;
+	worktreesDir: string;
+	sessionMaxAgeMs: number;
 	allowedProjects: string[];
 	piProvider: string;
 	piModel: string;
@@ -24,7 +26,7 @@ const PROVIDER_API_KEY_ENV: Record<string, string> = {
 };
 
 function env(key: string, fallback = ""): string {
-	return process.env[key] ?? fallback;
+	return process.env[key] || fallback;
 }
 
 function keyEnvFor(provider: string): string {
@@ -47,6 +49,8 @@ export function loadConfig(): Config {
 		port: Number(env("HOST_RUNNER_PORT", "3200")),
 		projectsDir: env("PROJECTS_DIR", resolve(env("HOME"), "Projects")),
 		stateDir: env("STATE_DIR", resolve(env("HOME"), "robot-mill/host-runner")),
+		worktreesDir: env("WORKTREES_DIR", resolve(env("HOME"), "robot-mill/worktrees")),
+		sessionMaxAgeMs: Number(env("SESSION_MAX_AGE_MS", String(24 * 60 * 60 * 1000))),
 		allowedProjects: env("ALLOWED_PROJECTS")
 			.split(",")
 			.map((s) => s.trim())

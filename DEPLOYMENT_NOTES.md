@@ -1,71 +1,140 @@
 # Deployment notes
 
-Remote host: `kirhgoff@192.168.0.31`
-Remote name: `peeper`
-Remote repo: `/home/kirhgoff/Projects/robot-mill`
+Remote host: SSH alias `peeper` (`~/.ssh/config`), repo at
+`/home/kirhgoff/Projects/robot-mill`. Override the target with
+`ROBOT_MILL_SSH=<host>` (e.g. when `peeper` isn't reachable directly and you're
+routing through Tailscale instead).
 
-Current deployment:
+## What runs where
 
-- Repository at `/home/kirhgoff/Projects/robot-mill`.
-- Docker Compose runs `backend` (port `3100`) and `telegram` (behind the `telegram` profile). The `web` service is disabled.
-- Health check: `http://192.168.0.31:3100/health_check`.
+- Docker Compose runs `backend` (port `3100`) and, behind the `telegram`
+  profile, `telegram`.
+- Three host-native tmux processes, started by `scripts/start-host.sh` /
+  `scripts/boot.sh` (not Compose services): `host-runner` (`3200`),
+  `linear-connector` (`3400`), `health-monitor` (`3300`).
 
-Data layout (peeper convention):
+## Data layout (peeper convention)
 
-- Mutable data lives in `/home/kirhgoff/robot-mill/` (home root): `workspace/`, `pi-home/`, `agent-sessions/`, `target/`. The repo symlinks `data -> /home/kirhgoff/robot-mill`; compose bind-mounts `./data/*` into the containers. These dirs are `chmod 777` so the container `agent` user (uid 1001) can write.
-- **Secrets convention:** all per-project secret files live under `~/.envs/<project>/`, and each project symlinks them from its repo. E.g. `~/Projects/robot-mill/.env -> ~/.envs/robot-mill/.env`, `~/Projects/eurotrip-support/.env -> ~/.envs/eurotrip-support/.env` (likewise `media-streaming`, `nightcrawler`). Edit files under `~/.envs/<project>/` to change secrets; host-only.
-- robot-mill's host components read `~/.envs/robot-mill/{host-runner,linear-connector,health-monitor}.env`.
-- eurotrip-support's `bun run all` also needs Google OAuth files, symlinked from the repo to `~/.envs/eurotrip-support/{credentials.json,token.json,token.docs.json,token.calendar.json}`. Drop the real files (copied from a machine where the OAuth flow was completed — tokens can't be generated headlessly) into `~/.envs/eurotrip-support/` and the repo symlinks resolve.
+Mutable data lives in `/home/kirhgoff/robot-mill/` (home root):
+`workspace/`, `pi-home/`, `agent-sessions/`, `target/`, `telegram/`. The repo
+symlinks `data -> /home/kirhgoff/robot-mill`; Compose bind-mounts `./data/*`
+into the containers. These dirs are `chmod 777` so the container `agent` user
+(uid 1001) can write.
 
-Redeploy from another machine:
+**Secrets convention:** all per-project secret files live under
+`~/.envs/<project>/`, and each project symlinks them from its repo, e.g.
+`~/Projects/robot-mill/.env -> ~/.envs/robot-mill/.env`. robot-mill's host
+components each read their own env file:
+
+- `~/.envs/robot-mill/host-runner.env`
+- `~/.envs/robot-mill/linear-connector.env`
+- `~/.envs/robot-mill/health-monitor.env`
+
+`host-runner.env` and `linear-connector.env` are required (their `start-host.sh`
+invocation refuses to start without one); `health-monitor.env` is optional —
+without it the `openrouter` check degrades to `unknown` and Telegram
+notifications stay off.
+
+## Redeploy
 
 ```fish
-./scripts/deploy-remote.fish
+./scripts/deploy-remote.fish --telegram          # main branch
+./scripts/deploy-remote.fish --telegram <branch>
 ```
 
-Redeploy another branch:
+This pulls the branch, `docker compose up --build -d`s the containers,
+restarts all three host components via `scripts/start-host.sh`, (re)installs
+an idempotent `@reboot scripts/boot.sh` crontab entry, and health-checks ports
+`3100`, `3200`, `3300`, `3400` with a few retries each.
 
-```fish
-./scripts/deploy-remote.fish branch-name
-```
+`.env` is gitignored and is NOT managed by the deploy script — set secrets
+directly on the remote; they persist across deploys.
 
 Manual remote check:
 
 ```fish
-ssh kirhgoff@192.168.0.31 'cd /home/kirhgoff/Projects/robot-mill; docker compose --profile telegram ps; docker compose --profile telegram logs --tail=100 backend telegram'
+ssh peeper 'cd /home/kirhgoff/Projects/robot-mill; docker compose ps; docker compose logs --tail=100 backend telegram'
+ssh peeper 'tmux ls; tail -n 100 ~/robot-mill/logs/linear-connector-$(date +%F).log'
 ```
 
-Telegram bot setup:
+## Host components after a reboot
 
-1. Create a bot with `@BotFather` and put its token in remote `.env` as `TELEGRAM_BOT_TOKEN`.
-2. Get your Telegram chat id and put it in `ALLOWED_CHAT_IDS` (empty allows everyone — dev only).
-3. Set the provider key in remote `.env` matching `PI_PROVIDER` — startup validation only requires the selected provider's key (`anthropic`→`ANTHROPIC_API_KEY`, `openrouter`→`OPENROUTER_API_KEY`, `openai`→`OPENAI_API_KEY`).
-4. The `telegram` service lives behind the `telegram` Compose profile — deploy with the flag below to start it.
-5. Send `/start` to the bot, then send normal prompts.
+`scripts/boot.sh` is the crontab `@reboot` entry; it starts all three host
+components via `scripts/start-host.sh`. Each component's own tmux session
+(`robot-mill-<component>`) auto-restarts its process on crash (10s backoff) —
+the crontab entry only needs to fire once per boot.
 
-AI provider:
+Logs: `~/robot-mill/logs/<component>-YYYY-MM-DD.log`, rotated daily by
+`scripts/rolling-log.ts` (kept `LOG_KEEP_DAYS`, default `14`, days; also
+echoed live to the tmux pane).
 
-- `PI_PROVIDER=openrouter` with `PI_MODEL=anthropic/claude-opus-4.8` routes through OpenRouter (key in `OPENROUTER_API_KEY`).
-- `pi` inherits the backend container's env, so any provider key added to the backend `environment:` block reaches the agent.
+Git worktrees for Linear code tickets live at `~/robot-mill/worktrees/<project>/<issue>`
+and are removed by the connector once a ticket finalizes.
 
-Per-key cost attribution & service model:
+## AI provider
 
-- Slices of work can bill to their own key; any unset key falls back to the shared `OPENROUTER_API_KEY`, so nothing breaks if they're absent:
-  - `OPENROUTER_API_KEY_BACKEND` — container agents → compose `.env` (`~/.envs/robot-mill/.env`).
-  - `OPENROUTER_API_KEY_<PROJECT>` — per-repo host-runner agents (both interactive `/project` and Linear `/task`), named by uppercased repo with non-alphanumerics as `_` (e.g. `media-streaming` → `OPENROUTER_API_KEY_MEDIA_STREAMING`, `eurotrip-support` → `OPENROUTER_API_KEY_EUROTRIP_SUPPORT`) → `~/.envs/robot-mill/host-runner.env`.
-  - `OPENROUTER_API_KEY_SERVICE` — low-cost diagnostic model → `host-runner.env` **and** `health-monitor.env`.
-- `SERVICE_PI_MODEL` (default `anthropic/claude-haiku-4.5`) is the low-cost model the health-monitor uses when a check fails (diagnose + safe auto-fix). Set it in `host-runner.env`.
-- **Health-monitor balance check:** the monitor's `ai-provider` check (OpenRouter `/credits` low-balance alert + `/models` availability, both free) needs a key in its own env. Create `~/.envs/robot-mill/health-monitor.env` with at least `OPENROUTER_API_KEY=sk-or-...` (or `OPENROUTER_API_KEY_SERVICE=...`); `start.sh` picks it up automatically. Without it the check degrades to `unknown`. Tune with `MIN_CREDITS_USD` (default `10`) and `DIAGNOSE_ON_FAILURE` (default `true`).
+- `PI_PROVIDER=openrouter` with `PI_MODEL=anthropic/claude-opus-4.8` routes
+  through OpenRouter; `pi` inherits its container/host process's env, so any
+  key added there reaches the agent.
+- Per-key cost attribution: any unset key falls back to the shared
+  `OPENROUTER_API_KEY` (or the `ANTHROPIC_`/`OPENAI_` equivalent), so nothing
+  breaks if a split key is absent.
+  - `OPENROUTER_API_KEY_BACKEND` — the backend container's agents → compose
+    `.env`.
+  - `OPENROUTER_API_KEY_<PROJECT>` — host-runner agents for that repo (both
+    interactive `/project` and Linear tasks), named by uppercased repo with
+    non-alphanumerics as `_` (e.g. `media-streaming` →
+    `OPENROUTER_API_KEY_MEDIA_STREAMING`) → `host-runner.env`.
+  - `OPENROUTER_API_KEY_SERVICE` — the low-cost diagnose model
+    (`SERVICE_PI_MODEL`, default `anthropic/claude-haiku-4.5`) → both
+    `host-runner.env` and `health-monitor.env`.
 
-Deploy with the Telegram service enabled (from another machine):
+## Linear setup
 
-```fish
-./scripts/deploy-remote.fish --telegram
+1. Create/point an API key at the team in `LINEAR_TEAM_KEY` (default `KIR`);
+   put it in `linear-connector.env` as `LINEAR_API_KEY`.
+2. States `Agent Queue` and `Agent Failed`, and label `agent`, are
+   auto-created on first connect if missing. `In Progress`/`In Review`/`Done`
+   must already exist in the team's workflow.
+3. Label a project (or add a project-matching Linear project name) with a
+   name from `host-runner`'s `ALLOWED_PROJECTS` so the connector can resolve a
+   target repo. Add the `ops` label to a ticket to run it as a runbook/deploy
+   task instead of a code change.
+4. `GITHUB_TOKEN` in `linear-connector.env` is used to look up a ticket's PR by
+   branch; the same token (in `host-runner.env`) is what the agent itself uses
+   to open the PR via the GitHub REST API (`gh` is not installed on the host
+   for agents to use).
+
+## Telegram bot setup
+
+1. Create a bot with `@BotFather`, put its token in `.env` as
+   `TELEGRAM_BOT_TOKEN` (containerized bot) — and, separately, in
+   `linear-connector.env` and `health-monitor.env` if you want their own
+   notifications (each holds its own token + `TELEGRAM_CHAT_ID`).
+2. Get your chat id (`@userinfobot`) and set `ALLOWED_CHAT_IDS` in `.env`
+   (empty allows everyone — dev only) and `TELEGRAM_CHAT_ID` wherever a
+   component should notify.
+3. Paste the command list from `README.md`'s "Register with BotFather"
+   section into `/setcommands`.
+4. Deploy with the `telegram` profile enabled: `./scripts/deploy-remote.fish --telegram`.
+
+## Firewall
+
+The host components are raw host processes (not Docker-published ports), so
+the containers reaching them via `host.docker.internal` is subject to `ufw`:
+
+```sh
+sudo ufw allow from 172.16.0.0/12 to any port 3200:3400 proto tcp
 ```
 
-Notes:
+This covers `host-runner` (`3200`) through `linear-connector` (`3400`). The
+host components themselves reach each other over loopback, so they need no
+firewall change.
 
-- The deploy script also restarts the host components (host-runner, health-monitor, linear-connector) in their tmux sessions, then health-checks both the backend (port `3100`) and host-runner (port `3200`).
-- `.env` is gitignored and is NOT managed by the deploy script. Set secrets directly in the remote `.env`; they persist across deploys.
-- The container entrypoint runs the Compose `command:` for each service (`install/50-entrypoint.sh`). It previously hijacked any service that had `TELEGRAM_BOT_TOKEN` set to run a removed `bot/bot.js`; that branch was removed.
-- The pi home dir (`/home/agent/.pi`, bind-mounted from `data/pi-home`) must be writable by `agent` (uid 1001) or `pi` fails with `EACCES`; the deploy script `chmod 777`s the data dirs.
+## Notes
+
+- The container entrypoint runs the Compose `command:` for each service
+  (`install/50-entrypoint.sh`).
+- The pi home dir (`/home/agent/.pi`, bind-mounted from `data/pi-home`) must be
+  writable by `agent` (uid 1001) or `pi` fails with `EACCES`; the deploy
+  script `chmod 777`s the data dirs.

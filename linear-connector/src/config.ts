@@ -4,14 +4,23 @@ export interface Config {
 	triggerState: string;
 	inProgressState: string;
 	reviewState: string;
+	doneState: string;
+	failedState: string;
+	agentLabel: string;
+	opsLabel: string;
 	hostRunnerUrl: string;
-	hostRunnerWsUrl: string;
 	pollIntervalMs: number;
-	promptTimeoutMs: number;
+	tickMs: number;
+	taskTimeoutMs: number;
+	maxConcurrentTasks: number;
+	port: number;
+	githubToken: string;
+	telegramBotToken: string;
+	telegramChatId: string;
 }
 
 function env(key: string, fallback = ""): string {
-	return process.env[key] ?? fallback;
+	return process.env[key] || fallback;
 }
 
 export function loadConfig(): Config {
@@ -21,10 +30,19 @@ export function loadConfig(): Config {
 		triggerState: env("LINEAR_TRIGGER_STATE", "Agent Queue"),
 		inProgressState: env("LINEAR_IN_PROGRESS_STATE", "In Progress"),
 		reviewState: env("LINEAR_REVIEW_STATE", "In Review"),
+		doneState: env("LINEAR_DONE_STATE", "Done"),
+		failedState: env("LINEAR_FAILED_STATE", "Agent Failed"),
+		agentLabel: env("LINEAR_AGENT_LABEL", "agent"),
+		opsLabel: env("LINEAR_OPS_LABEL", "ops"),
 		hostRunnerUrl: env("HOST_RUNNER_URL", "http://127.0.0.1:3200"),
-		hostRunnerWsUrl: env("HOST_RUNNER_WS_URL", "ws://127.0.0.1:3200/ws"),
-		pollIntervalMs: Number(env("POLL_INTERVAL_MS", "15000")),
-		promptTimeoutMs: Number(env("PROMPT_TIMEOUT_MS", "600000")),
+		pollIntervalMs: Number(env("POLL_INTERVAL_MS", "3600000")),
+		tickMs: Number(env("TICK_MS", "30000")),
+		taskTimeoutMs: Number(env("TASK_TIMEOUT_MS", "7200000")),
+		maxConcurrentTasks: Number(env("MAX_CONCURRENT_TASKS", "3")),
+		port: Number(env("LINEAR_CONNECTOR_PORT", "3400")),
+		githubToken: env("GITHUB_TOKEN"),
+		telegramBotToken: env("TELEGRAM_BOT_TOKEN"),
+		telegramChatId: env("TELEGRAM_CHAT_ID"),
 	};
 }
 

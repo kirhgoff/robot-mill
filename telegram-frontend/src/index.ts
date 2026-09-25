@@ -1,18 +1,16 @@
-/**
- * telegram-frontend entry point.
- *
- * Reads config from env, creates the bot, and starts it.
- */
-
 import { TelegramBot } from "./bot";
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+function env(key: string, fallback = ""): string {
+	return process.env[key] || fallback;
+}
+
+const BOT_TOKEN = env("TELEGRAM_BOT_TOKEN");
 if (!BOT_TOKEN) {
 	console.error("TELEGRAM_BOT_TOKEN is required");
 	process.exit(1);
 }
 
-const ALLOWED_CHAT_IDS = (process.env.ALLOWED_CHAT_IDS || "")
+const ALLOWED_CHAT_IDS = env("ALLOWED_CHAT_IDS")
 	.split(",")
 	.map((s) => s.trim())
 	.filter(Boolean)
@@ -25,24 +23,18 @@ const ALLOWED_CHAT_IDS = (process.env.ALLOWED_CHAT_IDS || "")
 		return id;
 	});
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3100";
-const BACKEND_WS_URL = process.env.BACKEND_WS_URL || "ws://localhost:3100/ws";
-const HOST_RUNNER_URL =
-	process.env.HOST_RUNNER_URL || "http://host.docker.internal:3200";
-const HOST_RUNNER_WS_URL =
-	process.env.HOST_RUNNER_WS_URL || "ws://host.docker.internal:3200/ws";
-const WORKSPACE = process.env.WORKSPACE || "/workspace";
+const HOST_RUNNER_URL = env("HOST_RUNNER_URL", "http://host.docker.internal:3200");
+const HOST_RUNNER_WS_URL = env("HOST_RUNNER_WS_URL", "ws://host.docker.internal:3200/ws");
+const LINEAR_URL = env("LINEAR_URL", "http://host.docker.internal:3400");
+const STATE_FILE = env("STATE_FILE", "/data/telegram/state.json");
 
 const bot = new TelegramBot({
 	botToken: BOT_TOKEN,
 	allowedChatIds: ALLOWED_CHAT_IDS,
-	backendBaseUrl: BACKEND_URL,
-	backendWsUrl: BACKEND_WS_URL,
 	hostRunnerBaseUrl: HOST_RUNNER_URL,
 	hostRunnerWsUrl: HOST_RUNNER_WS_URL,
-	workspace: WORKSPACE,
-	piProvider: process.env.PI_PROVIDER || "anthropic",
-	piModel: process.env.PI_MODEL || undefined,
+	linearUrl: LINEAR_URL,
+	stateFile: STATE_FILE,
 });
 
 bot.start().catch((err) => {

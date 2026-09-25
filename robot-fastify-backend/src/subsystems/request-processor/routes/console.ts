@@ -35,7 +35,7 @@ export function registerConsoleRoutes(
 	app.get("/console", serveConsole);
 
 	app.get("/api/overview", async () => {
-		const [projects, health, hostSystem, credits] = await Promise.all([
+		const [projects, health, hostSystem, credits, tasks] = await Promise.all([
 			fetchJson<{ allowed: string[]; running: string[] }>(
 				`${config.hostRunnerUrl}/projects`,
 			),
@@ -53,14 +53,25 @@ export function registerConsoleRoutes(
 				usage?: number;
 				remaining?: number;
 			}>(`${config.hostRunnerUrl}/credits`),
+			fetchJson<
+				Array<{
+					identifier: string;
+					title: string;
+					project: string;
+					mode: string;
+					key: string;
+					startedAt: number;
+					url: string;
+				}>
+			>(`${config.linearUrl}/tasks`),
 		]);
 		return {
-			agents: agentManager.listAgents(),
-			system: agentManager.getStatus(),
+			system: { uptime: agentManager.getStatus().uptime },
 			hostProjects: projects ?? { allowed: [], running: [] },
 			hostSystem: hostSystem ?? null,
 			health: health ?? { overall: "unreachable", checks: [] },
 			credits: credits ?? null,
+			tasks: tasks ?? [],
 		};
 	});
 
@@ -73,6 +84,7 @@ export function registerConsoleRoutes(
 					method: "POST",
 					headers: { "content-type": "application/json" },
 					body: JSON.stringify(req.body ?? {}),
+					signal: AbortSignal.timeout(15000),
 				},
 			);
 			reply.status(res.status);
@@ -85,7 +97,12 @@ export function registerConsoleRoutes(
 		async (req, reply) => {
 			const res = await fetch(
 				`${config.hostRunnerUrl}/projects/${encodeURIComponent(req.params.project)}/restart`,
-				{ method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
+				{
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: "{}",
+					signal: AbortSignal.timeout(15000),
+				},
 			);
 			reply.status(res.status);
 			return (await res.json().catch(() => ({ ok: false }))) as unknown;
@@ -97,7 +114,7 @@ export function registerConsoleRoutes(
 		async (req, reply) => {
 			const res = await fetch(
 				`${config.healthUrl}/check/${encodeURIComponent(req.params.project)}`,
-				{ method: "POST" },
+				{ method: "POST", signal: AbortSignal.timeout(15000) },
 			);
 			reply.status(res.status);
 			return (await res.json().catch(() => ({ ok: false }))) as unknown;

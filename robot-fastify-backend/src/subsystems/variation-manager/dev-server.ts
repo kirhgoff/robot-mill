@@ -166,12 +166,23 @@ export class DevServerManager extends EventEmitter {
 
 			const proc = spawn(command, args, {
 				cwd: worktreePath,
-				stdio: ["ignore", "pipe", "pipe"],
+				stdio: ["ignore", "ignore", "pipe"],
+			});
+
+			let stderr = "";
+			proc.stderr?.setEncoding("utf-8");
+			proc.stderr?.on("data", (chunk: string) => {
+				stderr += chunk;
 			});
 
 			proc.on("close", (code) => {
 				if (code === 0) resolve();
-				else reject(new Error(`${command} install failed with code ${code}`));
+				else
+					reject(
+						new Error(
+							`${command} install failed with code ${code}: ${stderr.slice(-2000)}`,
+						),
+					);
 			});
 
 			proc.on("error", reject);

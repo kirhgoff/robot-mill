@@ -1,13 +1,48 @@
+import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { connect, type Socket } from "node:net";
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { type Config, projectKeyValue } from "./config";
 import { hasSession, killSession, newSession } from "./tmux";
-import { ensureWorktree, removeWorktree, taskId, worktreePath } from "./worktree";
+import { ensureWorktree, removeWorktree, taskId } from "./worktree";
 
 const bunPath = process.execPath;
 const bridgePath = join(import.meta.dir, "bridge.ts");
+
+export interface TaskStatusFields {
+	busy: boolean | null;
+	startedAt: number | null;
+	endedAt: number | null;
+	lastText: string | null;
+}
+
+export interface TaskStatus extends TaskStatusFields {
+	key: string;
+	running: boolean;
+	dir: string;
+	repo: string;
+}
+
+function statusFilePath(stateDir: string, key: string): string {
+	return join(stateDir, "status", `${key}.json`);
+}
+
+function readStatusFile(path: string): TaskStatusFields | null {
+	try {
+		return JSON.parse(readFileSync(path, "utf-8"));
+	} catch {
+		return null;
+	}
+}
+
+function parseRepoSlug(url: string, fallback: string): string {
+	const httpsMatch = url.match(/^https?:\/\/[^/]+\/(.+?)(?:\.git)?$/);
+	if (httpsMatch) return httpsMatch[1];
+	const sshMatch = url.match(/^[^@]+@[^:]+:(.+?)(?:\.git)?$/);
+	if (sshMatch) return sshMatch[1];
+	return fallback;
+}
 
 export interface SessionOutput {
 	project: string;
@@ -32,6 +67,7 @@ export class PiSession extends EventEmitter {
 	private readonly dir: string;
 	private readonly socketPath: string;
 	private readonly sessionFile: string;
+	private readonly statusFile: string;
 	private readonly config: Config;
 	private readonly override: SessionOverride;
 	private socket: Socket | null = null;
@@ -47,6 +83,7 @@ export class PiSession extends EventEmitter {
 		this.override = override;
 		this.socketPath = join(config.stateDir, "sockets", `${project}.sock`);
 		this.sessionFile = join(config.stateDir, "sessions", `${project}.json`);
+		this.statusFile = statusFilePath(config.stateDir, project);
 	}
 
 	async ensure(): Promise<void> {
@@ -62,6 +99,10 @@ export class PiSession extends EventEmitter {
 
 	private async doEnsure(): Promise<void> {
 		if (!hasSession(this.project)) {
+			if (existsSync(this.sessionFile)) {
+				const age = Date.now() - statSync(this.sessionFile).mtimeMs;
+				if (age > this.config.sessionMaxAgeMs) unlinkSync(this.sessionFile);
+			}
 			const provider = this.override.provider ?? this.config.piProvider;
 			const model = this.override.model ?? this.config.piModel;
 			const keyEnv = this.override.keyEnv ?? this.config.providerKeyEnv;
@@ -76,6 +117,8 @@ export class PiSession extends EventEmitter {
 				shellQuote(this.socketPath),
 				"--session",
 				shellQuote(this.sessionFile),
+				"--status",
+				shellQuote(this.statusFile),
 				"--provider",
 				shellQuote(provider),
 			];
@@ -175,14 +218,14 @@ export class PiSession extends EventEmitter {
 				}
 				break;
 			}
-			case "agent_end":
-				if (this.pendingText.trim()) {
-					this.emit("message_complete", this.pendingText.trim());
-					this.emitOutput("message_complete", this.pendingText.trim());
-				}
+			case "agent_end": {
+				const text = this.pendingText.trim();
+				this.emit("message_complete", text);
+				this.emitOutput("message_complete", text);
 				this.pendingText = "";
 				this.emitOutput("status_change", { status: "idle" });
 				break;
+			}
 			case "tool_execution_start":
 				this.emitOutput("tool_start", { toolName: event.toolName, args: event.args });
 				break;
@@ -244,6 +287,7 @@ export class PiSession extends EventEmitter {
 		this.socket = null;
 		killSession(this.project);
 		this.removeSocketFile();
+		this.removeStatusFile();
 	}
 
 	removeSessionFile(): void {
@@ -252,9 +296,19 @@ export class PiSession extends EventEmitter {
 		} catch {}
 	}
 
+	readStatus(): TaskStatusFields | null {
+		return readStatusFile(this.statusFile);
+	}
+
 	private removeSocketFile(): void {
 		try {
 			unlinkSync(this.socketPath);
+		} catch {}
+	}
+
+	private removeStatusFile(): void {
+		try {
+			unlinkSync(this.statusFile);
 		} catch {}
 	}
 
@@ -283,6 +337,7 @@ export class PiSessionManager extends EventEmitter {
 	private sessions = new Map<string, PiSession>();
 	private config: Config;
 	private diagCounter = 0;
+	private repoSlugCache = new Map<string, string>();
 
 	constructor(config: Config) {
 		super();
@@ -325,11 +380,11 @@ export class PiSessionManager extends EventEmitter {
 		});
 	}
 
-	async getTask(project: string, branch: string): Promise<PiSession> {
+	async getTask(project: string, name: string, worktree: boolean): Promise<PiSession> {
 		const baseDir = join(this.config.projectsDir, project);
-		const dir = worktreePath(this.config.projectsDir, project, branch);
-		ensureWorktree(baseDir, dir, branch);
-		return this.ensureSession(taskId(project, branch), dir, {
+		const dir = worktree ? join(this.config.worktreesDir, project, name) : baseDir;
+		if (worktree) ensureWorktree(baseDir, dir, name);
+		return this.ensureSession(taskId(project, name), dir, {
 			keyEnv: this.config.providerKeyEnv,
 			keyValue: projectKeyValue(this.config, project),
 		});
@@ -343,12 +398,43 @@ export class PiSessionManager extends EventEmitter {
 		return this.get(project);
 	}
 
-	killTask(project: string, branch: string): void {
-		this.kill(taskId(project, branch));
-		removeWorktree(
-			join(this.config.projectsDir, project),
-			worktreePath(this.config.projectsDir, project, branch),
-		);
+	killTask(project: string, name: string): void {
+		this.kill(taskId(project, name));
+		const dir = join(this.config.worktreesDir, project, name);
+		if (existsSync(dir)) removeWorktree(join(this.config.projectsDir, project), dir);
+	}
+
+	async taskStatus(project: string, name: string): Promise<TaskStatus> {
+		const key = taskId(project, name);
+		const worktreeDir = join(this.config.worktreesDir, project, name);
+		const dir = existsSync(worktreeDir) ? worktreeDir : join(this.config.projectsDir, project);
+		const status = readStatusFile(statusFilePath(this.config.stateDir, key)) ?? {
+			busy: null,
+			startedAt: null,
+			endedAt: null,
+			lastText: null,
+		};
+		return { key, running: hasSession(key), dir, repo: this.repoSlug(project), ...status };
+	}
+
+	async abort(project: string, name?: string): Promise<void> {
+		if (name) {
+			this.sessions.get(taskId(project, name))?.abort();
+			return;
+		}
+		const session = await this.get(project);
+		session.abort();
+	}
+
+	private repoSlug(project: string): string {
+		const cached = this.repoSlugCache.get(project);
+		if (cached) return cached;
+		const res = spawnSync("git", ["-C", join(this.config.projectsDir, project), "remote", "get-url", "origin"], {
+			encoding: "utf-8",
+		});
+		const slug = parseRepoSlug(res.stdout.trim(), project);
+		this.repoSlugCache.set(project, slug);
+		return slug;
 	}
 
 	private async ensureSession(

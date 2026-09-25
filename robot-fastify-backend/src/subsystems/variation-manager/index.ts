@@ -547,6 +547,12 @@ export class VariationManager extends EventEmitter {
   }
 
   private waitForAgentIdle(variation: Variation): void {
+    const cleanup = () => {
+      this.agentManager.removeListener("agent:output", onOutput);
+      this.agentManager.removeListener("agent:error", onError);
+      this.agentManager.removeListener("agent:exit", onExit);
+    };
+
     const onOutput = (output: {
       agentId: string;
       type: string;
@@ -558,8 +564,7 @@ export class VariationManager extends EventEmitter {
         output.type === "status_change" &&
         (output.data as { status: string }).status === "idle"
       ) {
-        this.agentManager.removeListener("agent:output", onOutput);
-        this.agentManager.removeListener("agent:error", onError);
+        cleanup();
         // Agent is done — start the dev server
         this.startServer(variation.id).catch((err) => {
           variation.status = "error";
@@ -572,15 +577,23 @@ export class VariationManager extends EventEmitter {
 
     const onError = (event: { agentId: string; error: string }) => {
       if (event.agentId !== variation.agentId) return;
-      this.agentManager.removeListener("agent:output", onOutput);
-      this.agentManager.removeListener("agent:error", onError);
+      cleanup();
       variation.status = "error";
       variation.lastError = event.error;
       this.saveState();
     };
 
+    const onExit = (event: { agentId: string; code: number | null }) => {
+      if (event.agentId !== variation.agentId) return;
+      cleanup();
+      variation.status = "error";
+      variation.lastError = `agent exited (code ${event.code})`;
+      this.saveState();
+    };
+
     this.agentManager.on("agent:output", onOutput);
     this.agentManager.on("agent:error", onError);
+    this.agentManager.on("agent:exit", onExit);
   }
 
   private onDevServerExit(variationId: string): void {

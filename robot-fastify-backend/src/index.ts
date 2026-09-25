@@ -44,15 +44,21 @@ async function main() {
 
 	// ── Subsystems ─────────────────────────────────
 	const agentManager = new AgentManager(config);
-	const variationManager = new VariationManager(config, agentManager);
+	const variationManager = config.variationsEnabled
+		? new VariationManager(config, agentManager)
+		: null;
 	registerRequestProcessor(app, agentManager, variationManager, config);
 
 	// ── Graceful shutdown ──────────────────────────
+	let shuttingDown = false;
 	const shutdown = async () => {
+		if (shuttingDown) return;
+		shuttingDown = true;
 		app.log.info("Shutting down — stopping all dev servers and agents");
-		variationManager.shutdown();
+		variationManager?.shutdown();
 		agentManager.killAll();
 		await app.close();
+		process.exit(0);
 	};
 
 	process.on("SIGINT", shutdown);
