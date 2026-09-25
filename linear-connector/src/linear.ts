@@ -59,7 +59,7 @@ export class LinearClient {
 			},
 			body: JSON.stringify({ query, variables }),
 		});
-		if (!res.ok) throw new Error(`Linear API HTTP ${res.status}`);
+		if (!res.ok) throw new Error(`Linear API HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
 		const body = (await res.json()) as { data?: T; errors?: { message: string }[] };
 		if (body.errors?.length) {
 			throw new Error(`Linear API: ${body.errors.map((e) => e.message).join("; ")}`);
@@ -134,7 +134,7 @@ export class LinearClient {
 
 	async issuesInState(stateId: string): Promise<LinearIssue[]> {
 		const data = await this.query<{ issues: { nodes: IssueNode[] } }>(
-			`query($id: String!) {
+			`query($id: ID!) {
 				issues(filter: { state: { id: { eq: $id } } }, first: 50) {
 					nodes { ${ISSUE_FIELDS} }
 				}
@@ -146,7 +146,7 @@ export class LinearClient {
 
 	async issuesInStateWithLabel(stateId: string, label: string): Promise<LinearIssue[]> {
 		const data = await this.query<{ issues: { nodes: IssueNode[] } }>(
-			`query($id: String!, $label: String!) {
+			`query($id: ID!, $label: String!) {
 				issues(filter: { state: { id: { eq: $id } }, labels: { name: { eq: $label } } }, first: 50) {
 					nodes { ${ISSUE_FIELDS} }
 				}
