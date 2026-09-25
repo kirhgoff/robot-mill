@@ -8,11 +8,15 @@ export interface HostRunnerClientOptions {
 	reconnectInterval?: number;
 }
 
+const MAX_RECONNECT_INTERVAL = 60_000;
+
 export class HostRunnerClient extends EventEmitter {
 	private ws: WebSocket | null = null;
 	private opts: Required<HostRunnerClientOptions>;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	private reconnectDelay: number;
 	private intentionalClose = false;
+	private connected = false;
 
 	constructor(options: HostRunnerClientOptions) {
 		super();
@@ -21,12 +25,16 @@ export class HostRunnerClient extends EventEmitter {
 			reconnectInterval: 3000,
 			...options,
 		};
+		this.reconnectDelay = this.opts.reconnectInterval;
 	}
 
 	connect(): void {
 		this.intentionalClose = false;
 		this.ws = new WebSocket(this.opts.wsUrl);
-		this.ws.on("open", () => this.emit("ws:connected"));
+		this.ws.on("open", () => {
+			this.reconnectDelay = this.opts.reconnectInterval;
+			this.setConnected(true);
+		});
 		this.ws.on("message", (raw) => {
 			try {
 				this.emit("ws:message", JSON.parse(raw.toString()));
@@ -35,11 +43,10 @@ export class HostRunnerClient extends EventEmitter {
 			}
 		});
 		this.ws.on("close", () => {
-			this.emit("ws:disconnected");
-			if (this.opts.autoReconnect && !this.intentionalClose)
-				this.scheduleReconnect();
+			this.setConnected(false);
+			if (this.opts.autoReconnect && !this.intentionalClose) this.scheduleReconnect();
 		});
-		this.ws.on("error", (err) => this.emit("ws:error", err));
+		this.ws.on("error", () => {});
 	}
 
 	disconnect(): void {
@@ -62,8 +69,11 @@ export class HostRunnerClient extends EventEmitter {
 		});
 	}
 
-	async abort(project: string): Promise<{ ok: boolean }> {
-		return this.post(`/projects/${encodeURIComponent(project)}/abort`, {});
+	async abort(project: string, name?: string): Promise<{ ok: boolean }> {
+		return this.post(
+			`/projects/${encodeURIComponent(project)}/abort`,
+			name ? { name } : {},
+		);
 	}
 
 	async newConversation(project: string): Promise<{ ok: boolean }> {
@@ -83,12 +93,19 @@ export class HostRunnerClient extends EventEmitter {
 		return res.json() as Promise<{ ok: boolean }>;
 	}
 
+	private setConnected(value: boolean): void {
+		if (this.connected === value) return;
+		this.connected = value;
+		this.emit(value ? "ws:connected" : "ws:disconnected");
+	}
+
 	private scheduleReconnect(): void {
 		if (this.reconnectTimer) return;
 		this.reconnectTimer = setTimeout(() => {
 			this.reconnectTimer = null;
 			this.connect();
-		}, this.opts.reconnectInterval);
+		}, this.reconnectDelay);
+		this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_INTERVAL);
 	}
 
 	private async get<T>(path: string): Promise<T> {

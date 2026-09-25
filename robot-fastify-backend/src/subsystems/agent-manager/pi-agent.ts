@@ -84,6 +84,7 @@ export class PiAgent extends EventEmitter {
 		this.proc = spawn("pi", args, {
 			cwd: this.cwd,
 			env,
+			detached: true,
 		});
 
 		this.proc.stdout!.setEncoding("utf-8");
@@ -136,15 +137,23 @@ export class PiAgent extends EventEmitter {
 		this.pendingText = "";
 	}
 
-	/** Kill the underlying process. */
+	/** Kill the underlying process (and its process group). */
 	kill(): void {
-		if (this.proc) {
-			try {
-				this.proc.kill();
-			} catch {
-				// ignore
-			}
+		if (!this.proc?.pid) return;
+		const pid = this.proc.pid;
+		try {
+			process.kill(-pid, "SIGTERM");
+		} catch {
+			// already dead
 		}
+		setTimeout(() => {
+			if (!this.proc) return;
+			try {
+				process.kill(-pid, "SIGKILL");
+			} catch {
+				// already dead
+			}
+		}, 5000);
 	}
 
 	/** Whether the process is alive. */
@@ -179,12 +188,10 @@ export class PiAgent extends EventEmitter {
 	// ── Private ──────────────────────────────────────────────
 
 	private write(obj: Record<string, unknown>): void {
-		if (!this.proc?.stdin?.writable) return;
-		try {
-			this.proc.stdin.write(JSON.stringify(obj) + "\n");
-		} catch {
-			// ignore
+		if (!this.proc?.stdin?.writable) {
+			throw new Error(`Agent "${this.id}" process is not running`);
 		}
+		this.proc.stdin.write(JSON.stringify(obj) + "\n");
 	}
 
 	private onData(chunk: string): void {
@@ -259,26 +266,28 @@ export class PiAgent extends EventEmitter {
 
 	private handleExtensionUI(req: Record<string, unknown>): void {
 		// Auto-respond to extension UI requests for now
-		if (req.method === "confirm") {
-			this.write({
-				type: "extension_ui_response",
-				id: req.id,
-				confirmed: true,
-			});
-		} else if (req.method === "select") {
-			const options = req.options as string[] | undefined;
-			this.write({
-				type: "extension_ui_response",
-				id: req.id,
-				value: options?.[0],
-			});
-		} else if (req.method === "input") {
-			this.write({
-				type: "extension_ui_response",
-				id: req.id,
-				value: "",
-			});
-		}
+		try {
+			if (req.method === "confirm") {
+				this.write({
+					type: "extension_ui_response",
+					id: req.id,
+					confirmed: true,
+				});
+			} else if (req.method === "select") {
+				const options = req.options as string[] | undefined;
+				this.write({
+					type: "extension_ui_response",
+					id: req.id,
+					value: options?.[0],
+				});
+			} else if (req.method === "input") {
+				this.write({
+					type: "extension_ui_response",
+					id: req.id,
+					value: "",
+				});
+			}
+		} catch {}
 	}
 
 	private emitOutput(type: string, data: unknown): void {

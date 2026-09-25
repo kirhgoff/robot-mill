@@ -47,13 +47,17 @@ export interface Config {
 	consoleDir: string;
 	/** Log level */
 	logLevel: string;
+	/** linear-connector base URL (for the console's tickets card) */
+	linearUrl: string;
+	/** Whether the variation-manager subsystem is constructed and routed */
+	variationsEnabled: boolean;
 }
 
 /** Root of this package (where package.json lives). */
 const PROJECT_ROOT = resolve(import.meta.dirname, "..");
 
 function env(key: string, fallback = ""): string {
-	return process.env[key] ?? fallback;
+	return process.env[key] || fallback;
 }
 
 function collectApiKeys(): Record<string, string> {
@@ -79,6 +83,8 @@ function productionConfig(): Config {
 		healthUrl: env("HEALTH_URL", "http://host.docker.internal:3300"),
 		consoleDir: env("WEB_CONSOLE_DIR", "/home/agent/web-console"),
 		logLevel: env("LOG_LEVEL", "info"),
+		linearUrl: env("LINEAR_URL", "http://host.docker.internal:3400"),
+		variationsEnabled: env("VARIATIONS_ENABLED") === "true",
 	};
 }
 
@@ -99,6 +105,8 @@ function developmentConfig(): Config {
 		healthUrl: env("HEALTH_URL", "http://127.0.0.1:3300"),
 		consoleDir: env("WEB_CONSOLE_DIR", resolve(PROJECT_ROOT, "../web-console")),
 		logLevel: env("LOG_LEVEL", "debug"),
+		linearUrl: env("LINEAR_URL", "http://127.0.0.1:3400"),
+		variationsEnabled: env("VARIATIONS_ENABLED") === "true",
 	};
 }
 

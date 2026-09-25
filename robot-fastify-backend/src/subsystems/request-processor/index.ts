@@ -17,13 +17,13 @@ import { registerWebSocket } from "./websocket";
 export function registerRequestProcessor(
 	app: FastifyInstance,
 	agentManager: AgentManager,
-	variationManager: VariationManager,
+	variationManager: VariationManager | null,
 	config: Config,
 ) {
 	registerHealthRoutes(app, agentManager);
 	registerStatusRoutes(app, agentManager);
 	registerAgentRoutes(app, agentManager);
-	registerVariationRoutes(app, variationManager);
+	if (variationManager) registerVariationRoutes(app, variationManager);
 	registerConsoleRoutes(app, agentManager, config);
 	registerConsoleStream(app, agentManager, config);
 	registerWebSocket(app, agentManager);

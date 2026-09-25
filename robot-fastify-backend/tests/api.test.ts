@@ -24,6 +24,7 @@ beforeAll(async () => {
 	tempDir = mkdtempSync(join(tmpdir(), "robot-backend-test-"));
 
 	const config: Config = {
+		appEnv: "development",
 		host: "127.0.0.1",
 		port: 0, // not used — we use inject()
 		workspace: join(tempDir, "workspace"),
@@ -31,14 +32,19 @@ beforeAll(async () => {
 		piProvider: "anthropic",
 		piModel: "",
 		apiKeys: { ANTHROPIC_API_KEY: "test-key" },
+		hostRunnerUrl: "http://127.0.0.1:39201",
+		healthUrl: "http://127.0.0.1:39202",
+		linearUrl: "http://127.0.0.1:39203",
+		consoleDir: join(tempDir, "console"),
 		logLevel: "silent",
+		variationsEnabled: false,
 	};
 
 	app = Fastify({ logger: false });
 	await app.register(websocket);
 
 	agentManager = new AgentManager(config);
-	registerRequestProcessor(app, agentManager);
+	registerRequestProcessor(app, agentManager, null, config);
 
 	await app.ready();
 });
@@ -99,25 +105,11 @@ describe("POST /agents", () => {
 		expect(res.json().error).toContain("name");
 	});
 
-	test("rejects duplicate sessionId", async () => {
-		// First spawn will likely fail (no pi binary in test) but the agent
-		// gets registered before the process errors — good enough to test duplicate detection.
+	test("rejects duplicate sessionId", () => {
 		const payload = { name: "test-dup", sessionId: "dup-check" };
-
-		const res1 = await app.inject({ method: "POST", url: "/agents", payload });
-		// It may 201 or the spawn may register then immediately error — either way
-		// a second call with the same sessionId should 409.
-		if (res1.statusCode === 201) {
-			const res2 = await app.inject({
-				method: "POST",
-				url: "/agents",
-				payload,
-			});
-			expect(res2.statusCode).toBe(409);
-
-			// Cleanup
-			await app.inject({ method: "DELETE", url: `/agents/dup-check` });
-		}
+		agentManager.spawn(payload);
+		expect(() => agentManager.spawn(payload)).toThrow(/already exists/);
+		agentManager.kill("dup-check");
 	});
 });
 
@@ -164,5 +156,18 @@ describe("GET /agents/sessions", () => {
 		const res = await app.inject({ method: "GET", url: "/agents/sessions" });
 		expect(res.statusCode).toBe(200);
 		expect(Array.isArray(res.json())).toBe(true);
+	});
+});
+
+// ── Console overview ─────────────────────────────
+
+describe("GET /api/overview", () => {
+	test("reports unreachable dependencies with no data", async () => {
+		const res = await app.inject({ method: "GET", url: "/api/overview" });
+		expect(res.statusCode).toBe(200);
+
+		const body = res.json();
+		expect(body.health.overall).toBe("unreachable");
+		expect(body.tasks).toEqual([]);
 	});
 });

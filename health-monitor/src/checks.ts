@@ -1,6 +1,9 @@
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 export type CheckStatus = "ok" | "fail" | "error" | "unknown";
 
@@ -15,10 +18,22 @@ interface RunResult {
 	stderr: string;
 }
 
-function run(cmd: string, args: string[], cwd: string, timeoutMs: number): RunResult {
-	const res = spawnSync(cmd, args, { cwd, encoding: "utf-8", timeout: timeoutMs });
-	if (res.error) return { code: 1, stdout: "", stderr: res.error.message };
-	return { code: res.status ?? 1, stdout: (res.stdout ?? "").trim(), stderr: (res.stderr ?? "").trim() };
+async function run(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<RunResult> {
+	try {
+		const { stdout, stderr } = await execFileAsync(cmd, args, {
+			cwd,
+			timeout: timeoutMs,
+			maxBuffer: 4 * 1024 * 1024,
+		});
+		return { code: 0, stdout: stdout.trim(), stderr: stderr.trim() };
+	} catch (err) {
+		const failure = err as { code?: number; stdout?: string; stderr?: string; message?: string };
+		return {
+			code: failure.code ?? 1,
+			stdout: (failure.stdout ?? "").trim(),
+			stderr: (failure.stderr ?? failure.message ?? "").trim(),
+		};
+	}
 }
 
 function lastLine(text: string): string {
@@ -30,22 +45,13 @@ function detailFrom(res: RunResult): string {
 	return lastLine(res.stdout) || lastLine(res.stderr);
 }
 
-function meaningfulTail(res: RunResult, maxLines = 4): string {
-	const noise = /^(\$ |error: script ")/;
-	const lines = `${res.stdout}\n${res.stderr}`
-		.split("\n")
-		.map((l) => l.trim())
-		.filter((l) => l && !noise.test(l));
-	return lines.slice(-maxLines).join(" · ");
-}
-
-export function serviceCheck(projectDir: string, timeoutMs: number): Verdict {
+export async function serviceCheck(projectDir: string, timeoutMs: number): Promise<Verdict> {
 	if (!existsSync(projectDir)) {
 		return { status: "error", detail: `project dir not found: ${projectDir}` };
 	}
 	const script = join(projectDir, "scripts", "health-check.sh");
 	if (existsSync(script)) {
-		const res = run("bash", [script], projectDir, timeoutMs);
+		const res = await run("bash", [script], projectDir, timeoutMs);
 		const detail = detailFrom(res) || (res.code === 0 ? "ok" : "check failed");
 		return { status: res.code === 0 ? "ok" : "fail", detail };
 	}
@@ -81,8 +87,8 @@ function parseCompose(out: string): ComposeService[] {
 	}
 }
 
-export function dockerComposeCheck(projectDir: string, timeoutMs: number): Verdict {
-	const res = run("docker", ["compose", "ps", "--format", "json"], projectDir, timeoutMs);
+export async function dockerComposeCheck(projectDir: string, timeoutMs: number): Promise<Verdict> {
+	const res = await run("docker", ["compose", "ps", "--format", "json"], projectDir, timeoutMs);
 	if (res.code !== 0) {
 		return { status: "fail", detail: `docker compose ps failed: ${detailFrom(res)}` };
 	}
@@ -100,14 +106,6 @@ export function dockerComposeCheck(projectDir: string, timeoutMs: number): Verdi
 		return { status: "fail", detail: `${unhealthy.length}/${services.length} not healthy: ${detail}` };
 	}
 	return { status: "ok", detail: `${services.length}/${services.length} services running` };
-}
-
-export function runSync(projectDir: string, timeoutMs: number): Verdict {
-	const res = run("bun", ["run", "all"], projectDir, timeoutMs);
-	if (res.code === 0) {
-		return { status: "ok", detail: detailFrom(res) || "sync completed" };
-	}
-	return { status: "fail", detail: meaningfulTail(res) || "sync failed" };
 }
 
 export interface ProviderVerdict extends Verdict {

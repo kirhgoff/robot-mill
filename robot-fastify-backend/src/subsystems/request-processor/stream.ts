@@ -23,9 +23,17 @@ export function registerConsoleStream(
 		}
 	};
 
+	let closed = false;
+	let backoffMs = 3000;
+	let upstream: WebSocket | null = null;
+
 	const wsUrl = `${config.hostRunnerUrl.replace(/^http/, "ws")}/ws`;
 	const connectUpstream = () => {
-		const upstream = new WebSocket(wsUrl);
+		if (closed) return;
+		upstream = new WebSocket(wsUrl);
+		upstream.on("open", () => {
+			backoffMs = 3000;
+		});
 		upstream.on("message", (raw) => {
 			try {
 				broadcast({ source: "host", ...JSON.parse(raw.toString()) });
@@ -33,10 +41,19 @@ export function registerConsoleStream(
 				// ignore
 			}
 		});
-		upstream.on("close", () => setTimeout(connectUpstream, 3000));
-		upstream.on("error", () => upstream.close());
+		upstream.on("close", () => {
+			if (closed) return;
+			setTimeout(connectUpstream, backoffMs);
+			backoffMs = Math.min(backoffMs * 2, 60000);
+		});
+		upstream.on("error", () => upstream?.close());
 	};
 	connectUpstream();
+
+	app.addHook("onClose", async () => {
+		closed = true;
+		upstream?.close();
+	});
 
 	agentManager.on("agent:output", (o: AgentOutput) =>
 		broadcast({ source: "agent", type: o.type, agentId: o.agentId, data: o.data }),

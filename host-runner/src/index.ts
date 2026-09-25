@@ -1,6 +1,7 @@
 import type { ServerWebSocket } from "bun";
 import { spawnSync } from "node:child_process";
 import { freemem, totalmem } from "node:os";
+import { join } from "node:path";
 import { loadConfig, validateConfig } from "./config";
 import { PiSessionManager, type SessionOutput } from "./session";
 import { listSessions } from "./tmux";
@@ -145,20 +146,32 @@ const server = Bun.serve({
 					}
 					if (req.method === "POST" && action === "/task") {
 						const body = await readBody(req);
+						const name = body.name as string | undefined;
 						const message = body.message as string | undefined;
-						const branch = body.branch as string | undefined;
-						if (!message || !branch) {
-							return json({ error: "message and branch are required" }, 400);
+						const worktree = body.worktree === undefined ? true : Boolean(body.worktree);
+						if (!name || !message) {
+							return json({ error: "name and message are required" }, 400);
 						}
-						const session = await manager.getTask(project, branch);
+						if (!/^[a-z0-9._-]+$/.test(name)) {
+							return json({ error: "invalid name" }, 400);
+						}
+						const session = await manager.getTask(project, name, worktree);
 						session.prompt(message);
-						return json({ ok: true, sessionKey: taskId(project, branch) });
+						const dir = worktree
+							? join(config.worktreesDir, project, name)
+							: join(config.projectsDir, project);
+						return json({ ok: true, key: taskId(project, name), dir });
+					}
+					if (req.method === "GET" && action === "/task") {
+						const name = url.searchParams.get("name");
+						if (!name) return json({ error: "name is required" }, 400);
+						return json(await manager.taskStatus(project, name));
 					}
 					if (req.method === "DELETE" && action === "/task") {
 						const body = await readBody(req);
-						const branch = body.branch as string | undefined;
-						if (!branch) return json({ error: "branch is required" }, 400);
-						manager.killTask(project, branch);
+						const name = body.name as string | undefined;
+						if (!name) return json({ error: "name is required" }, 400);
+						manager.killTask(project, name);
 						return json({ ok: true });
 					}
 					if (req.method === "POST" && action === "/restart") {
@@ -166,8 +179,9 @@ const server = Bun.serve({
 						return json({ ok: true, running: session.running });
 					}
 					if (req.method === "POST" && action === "/abort") {
-						const session = await manager.get(project);
-						session.abort();
+						const body = await readBody(req);
+						const name = body.name as string | undefined;
+						await manager.abort(project, name);
 						return json({ ok: true });
 					}
 				if (req.method === "POST" && action === "/new-session") {

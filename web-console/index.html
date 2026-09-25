@@ -187,7 +187,7 @@
     <div class="grid">
       <div class="card"><h2>◈ components</h2><div id="health"><span class="muted blink">scanning…</span></div></div>
       <div class="card"><h2>◈ system</h2><div id="system"><span class="muted blink">scanning…</span></div></div>
-      <div class="card"><h2>◈ agents</h2><div id="agents"><span class="muted blink">scanning…</span></div></div>
+      <div class="card"><h2>◈ tickets</h2><div id="tickets"><span class="muted blink">scanning…</span></div></div>
       <div class="card" style="grid-column:1/-1">
         <h2>▶ live output <span class="muted" id="streamState" style="text-transform:none;letter-spacing:0">connecting…</span></h2>
         <div class="tabs" id="tabs"></div>
@@ -335,12 +335,12 @@ async function refresh(){
   const hp = d.hostProjects || {allowed:[],running:[]};
   renderTabs(hp);
 
-  const agents = d.agents || [];
-  $("agents").innerHTML = agents.length ? agents.map(a => `
+  const tasks = d.tasks || [];
+  $("tickets").innerHTML = tasks.length ? tasks.map(t => `
     <div class="row"><div style="flex:1">
-      <span class="name">${esc(a.name)}</span> <span class="tag ${a.status==="running"?"run":"idle"}">${esc(a.status)}</span>
-      <div class="meta">${esc(a.cwd||"")}${a.currentTask?" · "+esc(a.currentTask.slice(0,60)):""}</div>
-    </div></div>`).join("") : `<span class="muted">no container agents running</span>`;
+      <span class="name">${esc(t.identifier)}</span> <span class="tag run">${esc(t.mode)}</span>
+      <div class="meta">${esc(t.project)} · started ${ago(t.startedAt)} ago${t.url?` · <a href="${esc(t.url)}" target="_blank" rel="noopener">↗</a>`:""}</div>
+    </div></div>`).join("") : `<span class="muted">no active tickets</span>`;
 
   renderCredits(d.credits);
 
@@ -354,7 +354,6 @@ async function refresh(){
     : "";
   $("system").innerHTML = `
     <div class="row"><span class="name">uptime</span><span class="meta">${sys.uptime?fmtDur(sys.uptime):"—"}</span></div>
-    <div class="row"><span class="name">container agents</span><span class="meta">${sys.agentCount??"—"}</span></div>
     <div class="row"><span class="name">host projects</span><span class="meta">${(hp.allowed||[]).length} (${(hp.running||[]).length} live)</span></div>
     <div class="row"><span class="name">components ok</span><span class="meta">${checks.filter(c=>c.status==="ok").length}/${checks.length}</span></div>
     ${credRow}${memRow}${diskRow}`;

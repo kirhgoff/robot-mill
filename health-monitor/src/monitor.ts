@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CheckStatus, Verdict } from "./checks";
-import { providerCheck, runSync, serviceCheck } from "./checks";
+import { providerCheck, serviceCheck } from "./checks";
 import type { Config } from "./config";
+import { notify } from "./telegram";
 
 export type { CheckStatus } from "./checks";
 
@@ -20,18 +20,14 @@ const PROVIDER_CHECK = "openrouter";
 export class Monitor {
 	private config: Config;
 	private results = new Map<string, CheckResult>();
+	private notifiedStatus = new Map<string, CheckStatus>();
 
 	constructor(config: Config) {
 		this.config = config;
-		mkdirSync(config.stateDir, { recursive: true });
-	}
-
-	private serviceProjects(): string[] {
-		return [this.config.mediaProject, this.config.robotProject];
 	}
 
 	private knownChecks(): string[] {
-		return [...this.serviceProjects(), this.config.eurotripProject, PROVIDER_CHECK];
+		return [...this.config.serviceProjects, PROVIDER_CHECK];
 	}
 
 	private seedInitial(): void {
@@ -56,8 +52,7 @@ export class Monitor {
 
 	private async runAll(): Promise<void> {
 		await Promise.all([
-			...this.serviceProjects().map((p) => this.runServiceCheck(p)),
-			this.runEurotripCheck(),
+			...this.config.serviceProjects.map((p) => this.runServiceCheck(p)),
 			this.runProviderCheck(),
 		]);
 	}
@@ -76,13 +71,18 @@ export class Monitor {
 			at: Date.now(),
 			durationMs: 0,
 		});
-		if (this.serviceProjects().includes(name)) await this.runServiceCheck(name);
-		else if (name === this.config.eurotripProject) await this.runEurotripCheck();
+		if (this.config.serviceProjects.includes(name)) await this.runServiceCheck(name);
 		else await this.runProviderCheck();
 		return this.results.get(name) ?? null;
 	}
 
-	private record(name: string, status: CheckStatus, detail: string, startedAt: number): void {
+	private record(
+		name: string,
+		status: CheckStatus,
+		detail: string,
+		startedAt: number,
+		silent = false,
+	): void {
 		this.results.set(name, {
 			name,
 			project: name,
@@ -92,17 +92,23 @@ export class Monitor {
 			durationMs: Date.now() - startedAt,
 		});
 		console.log(`[${name}] ${status.toUpperCase()} — ${detail.slice(0, 160).replace(/\n/g, " ")}`);
+		if (silent) return;
+		const wasFailing = this.notifiedStatus.get(name) === "fail" || this.notifiedStatus.get(name) === "error";
+		const failing = status === "fail" || status === "error";
+		if (failing && !wasFailing) void notify(this.config, `🔴 ${name} FAIL — ${detail.slice(0, 300)}`);
+		else if (status === "ok" && wasFailing) void notify(this.config, `🟢 ${name} recovered`);
+		this.notifiedStatus.set(name, status);
 	}
 
 	private async runServiceCheck(project: string): Promise<void> {
 		const startedAt = Date.now();
 		const dir = join(this.config.projectsDir, project);
-		const verdict = serviceCheck(dir, this.config.checkTimeoutMs);
+		const verdict = await serviceCheck(dir, this.config.checkTimeoutMs);
 		if (verdict.status !== "fail" || !this.config.diagnoseOnFailure) {
 			this.record(project, verdict.status, verdict.detail, startedAt);
 			return;
 		}
-		this.record(project, verdict.status, `${verdict.detail} — diagnosing…`, startedAt);
+		this.record(project, verdict.status, `${verdict.detail} — diagnosing…`, startedAt, true);
 		const fixed = await this.diagnose(project, verdict.detail);
 		this.record(project, fixed.status, `was: ${verdict.detail}\nfix: ${fixed.detail}`, startedAt);
 	}
@@ -134,33 +140,6 @@ export class Monitor {
 		}
 	}
 
-	private async runEurotripCheck(): Promise<void> {
-		const project = this.config.eurotripProject;
-		const startedAt = Date.now();
-		const marker = join(this.config.stateDir, "eurotrip-last-sync");
-		const lastSync = readTimestamp(marker);
-		const ageMs = lastSync ? Date.now() - lastSync : Number.POSITIVE_INFINITY;
-
-		if (ageMs <= this.config.eurotripMaxAgeMs) {
-			const hours = Math.round(ageMs / 3_600_000);
-			this.record(project, "ok", `last sync ${hours}h ago (fresh)`, startedAt);
-			return;
-		}
-
-		const dir = join(this.config.projectsDir, project);
-		if (!existsSync(dir)) {
-			this.record(project, "error", `project dir not found: ${dir}`, startedAt);
-			return;
-		}
-		const verdict = runSync(dir, this.config.syncTimeoutMs);
-		if (verdict.status === "ok") {
-			writeFileSync(marker, String(Date.now()));
-			this.record(project, "ok", `stale — ran full sync: ${verdict.detail}`, startedAt);
-		} else {
-			this.record(project, "fail", `sync failed: ${verdict.detail}`, startedAt);
-		}
-	}
-
 	private async runProviderCheck(): Promise<void> {
 		const startedAt = Date.now();
 		const verdict = await providerCheck(
@@ -179,14 +158,4 @@ function parseVerdict(text: string): Verdict {
 		status: match[1].toUpperCase() === "OK" ? "ok" : "fail",
 		detail: (match[2] || "").trim() || text.trim().slice(0, 500),
 	};
-}
-
-function readTimestamp(path: string): number | null {
-	try {
-		if (!existsSync(path)) return null;
-		const value = Number(readFileSync(path, "utf-8").trim());
-		return Number.isFinite(value) ? value : null;
-	} catch {
-		return null;
-	}
 }

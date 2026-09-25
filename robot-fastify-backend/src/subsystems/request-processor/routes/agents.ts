@@ -14,6 +14,11 @@
 import type { FastifyInstance } from "fastify";
 import type { AgentManager } from "../../agent-manager/index";
 
+function statusForAgentError(err: unknown): number {
+	const message = err instanceof Error ? err.message : "";
+	return message.includes("not found") ? 404 : 409;
+}
+
 export function registerAgentRoutes(
 	app: FastifyInstance,
 	agentManager: AgentManager,
@@ -75,8 +80,10 @@ export function registerAgentRoutes(
 			try {
 				agentManager.prompt(req.params.id, message);
 				return reply.send({ ok: true });
-			} catch {
-				return reply.status(404).send({ error: "agent not found" });
+			} catch (err) {
+				return reply.status(statusForAgentError(err)).send({
+					error: err instanceof Error ? err.message : "prompt failed",
+				});
 			}
 		},
 	);
@@ -89,8 +96,10 @@ export function registerAgentRoutes(
 			try {
 				agentManager.abort(req.params.id);
 				return reply.send({ ok: true });
-			} catch {
-				return reply.status(404).send({ error: "agent not found" });
+			} catch (err) {
+				return reply.status(statusForAgentError(err)).send({
+					error: err instanceof Error ? err.message : "abort failed",
+				});
 			}
 		},
 	);
@@ -103,8 +112,10 @@ export function registerAgentRoutes(
 			try {
 				agentManager.newSession(req.params.id);
 				return reply.send({ ok: true });
-			} catch {
-				return reply.status(404).send({ error: "agent not found" });
+			} catch (err) {
+				return reply.status(statusForAgentError(err)).send({
+					error: err instanceof Error ? err.message : "new-session failed",
+				});
 			}
 		},
 	);
@@ -120,20 +131,5 @@ export function registerAgentRoutes(
 
 	app.get("/agents/sessions", async (_req, reply) => {
 		return reply.send(agentManager.listSavedSessions());
-	});
-
-	// ── Clone a repo into the workspace ────────────
-
-	app.post("/repos", async (req, reply) => {
-		const body = req.body as Record<string, unknown>;
-		const repo = body.repo as string | undefined;
-		if (!repo) return reply.status(400).send({ error: "repo is required" });
-		try {
-			return reply.send(agentManager.cloneRepo(repo));
-		} catch (err) {
-			return reply.status(400).send({
-				error: err instanceof Error ? err.message : "clone failed",
-			});
-		}
 	});
 }

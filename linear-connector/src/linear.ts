@@ -7,6 +7,8 @@ export interface LinearIssue {
 	description: string;
 	labels: string[];
 	project: string | null;
+	startedAt: string | null;
+	url: string;
 }
 
 export interface TeamInfo {
@@ -14,8 +16,35 @@ export interface TeamInfo {
 	states: { id: string; name: string }[];
 }
 
+interface IssueNode {
+	id: string;
+	identifier: string;
+	title: string;
+	description: string | null;
+	startedAt: string | null;
+	url: string;
+	labels: { nodes: { name: string }[] };
+	project: { name: string } | null;
+}
+
+const ISSUE_FIELDS = "id identifier title description startedAt url labels { nodes { name } } project { name }";
+
+function toIssue(n: IssueNode): LinearIssue {
+	return {
+		id: n.id,
+		identifier: n.identifier,
+		title: n.title,
+		description: n.description ?? "",
+		labels: n.labels.nodes.map((l) => l.name),
+		project: n.project?.name ?? null,
+		startedAt: n.startedAt,
+		url: n.url,
+	};
+}
+
 export class LinearClient {
 	private apiKey: string;
+	private labelCache = new Map<string, string>();
 
 	constructor(apiKey: string) {
 		this.apiKey = apiKey;
@@ -30,6 +59,7 @@ export class LinearClient {
 			},
 			body: JSON.stringify({ query, variables }),
 		});
+		if (!res.ok) throw new Error(`Linear API HTTP ${res.status}`);
 		const body = (await res.json()) as { data?: T; errors?: { message: string }[] };
 		if (body.errors?.length) {
 			throw new Error(`Linear API: ${body.errors.map((e) => e.message).join("; ")}`);
@@ -41,9 +71,7 @@ export class LinearClient {
 	async getTeam(key: string): Promise<TeamInfo> {
 		const data = await this.query<{
 			teams: { nodes: { id: string; key: string; states: { nodes: { id: string; name: string }[] } }[] };
-		}>(
-			`query { teams { nodes { id key states { nodes { id name } } } } }`,
-		);
+		}>(`query { teams { nodes { id key states { nodes { id name } } } } }`);
 		const team = data.teams.nodes.find((t) => t.key === key);
 		if (!team) throw new Error(`Linear team "${key}" not found`);
 		return { id: team.id, states: team.states.nodes };
@@ -67,38 +95,83 @@ export class LinearClient {
 		return created.workflowStateCreate.workflowState.id;
 	}
 
-	async issuesInState(stateId: string): Promise<LinearIssue[]> {
-		const data = await this.query<{
-			workflowState: {
-				issues: {
-					nodes: {
-						id: string;
-						identifier: string;
-						title: string;
-						description: string | null;
-						labels: { nodes: { name: string }[] };
-						project: { name: string } | null;
-					}[];
-				};
-			};
+	async ensureLabel(teamId: string, name: string): Promise<string> {
+		const cacheKey = `${teamId}:${name}`;
+		const cached = this.labelCache.get(cacheKey);
+		if (cached) return cached;
+
+		const existing = await this.query<{ issueLabels: { nodes: { id: string }[] } }>(
+			`query($name: String!) { issueLabels(filter: { name: { eq: $name } }) { nodes { id } } }`,
+			{ name },
+		);
+		const found = existing.issueLabels.nodes[0];
+		if (found) {
+			this.labelCache.set(cacheKey, found.id);
+			return found.id;
+		}
+
+		const created = await this.query<{
+			issueLabelCreate: { issueLabel: { id: string } };
 		}>(
+			`mutation($input: IssueLabelCreateInput!) {
+				issueLabelCreate(input: $input) { issueLabel { id } }
+			}`,
+			{ input: { name, teamId } },
+		);
+		const id = created.issueLabelCreate.issueLabel.id;
+		this.labelCache.set(cacheKey, id);
+		return id;
+	}
+
+	async addLabel(issueId: string, labelId: string): Promise<void> {
+		await this.query(
+			`mutation($issueId: String!, $labelId: String!) {
+				issueAddLabel(id: $issueId, labelId: $labelId) { success }
+			}`,
+			{ issueId, labelId },
+		);
+	}
+
+	async issuesInState(stateId: string): Promise<LinearIssue[]> {
+		const data = await this.query<{ issues: { nodes: IssueNode[] } }>(
 			`query($id: String!) {
-				workflowState(id: $id) {
-					issues {
-						nodes { id identifier title description labels { nodes { name } } project { name } }
-					}
+				issues(filter: { state: { id: { eq: $id } } }, first: 50) {
+					nodes { ${ISSUE_FIELDS} }
 				}
 			}`,
 			{ id: stateId },
 		);
-		return data.workflowState.issues.nodes.map((n) => ({
-			id: n.id,
-			identifier: n.identifier,
-			title: n.title,
-			description: n.description ?? "",
-			labels: n.labels.nodes.map((l) => l.name),
-			project: n.project?.name ?? null,
-		}));
+		return data.issues.nodes.map(toIssue);
+	}
+
+	async issuesInStateWithLabel(stateId: string, label: string): Promise<LinearIssue[]> {
+		const data = await this.query<{ issues: { nodes: IssueNode[] } }>(
+			`query($id: String!, $label: String!) {
+				issues(filter: { state: { id: { eq: $id } }, labels: { name: { eq: $label } } }, first: 50) {
+					nodes { ${ISSUE_FIELDS} }
+				}
+			}`,
+			{ id: stateId, label },
+		);
+		return data.issues.nodes.map(toIssue);
+	}
+
+	async createIssue(input: {
+		teamId: string;
+		title: string;
+		description: string;
+		stateId: string;
+		labelIds: string[];
+	}): Promise<{ id: string; identifier: string; url: string }> {
+		const data = await this.query<{
+			issueCreate: { issue: { id: string; identifier: string; url: string } };
+		}>(
+			`mutation($input: IssueCreateInput!) {
+				issueCreate(input: $input) { issue { id identifier url } }
+			}`,
+			{ input },
+		);
+		return data.issueCreate.issue;
 	}
 
 	async moveIssue(issueId: string, stateId: string): Promise<void> {

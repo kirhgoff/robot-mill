@@ -1,72 +1,58 @@
-/**
- * Telegram bot that uses BackendClient to manage agents.
- *
- * Each Telegram chat gets its own pi agent (spawned on /start).
- * Agent output is streamed back to the chat via WebSocket.
- */
-
-import { Telegraf } from "telegraf";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import pino from "pino";
-import { BackendClient, type AgentInfo } from "./backend-client";
+import { Telegraf } from "telegraf";
 import { HostRunnerClient } from "./host-runner-client";
+import { LinearClient } from "./linear-client";
 
 const TG_MAX_LEN = 4000;
+const TICKET_RE = /^\/(?:ticket|ops)(?:@\S+)?\s+(\S+)\s+([^\n]+)\n?([\s\S]*)$/;
 
 export interface TelegramBotOptions {
 	botToken: string;
 	allowedChatIds: number[];
-	backendBaseUrl: string;
-	backendWsUrl: string;
 	hostRunnerBaseUrl: string;
 	hostRunnerWsUrl: string;
-	workspace: string;
-	piProvider?: string;
-	piModel?: string;
+	linearUrl: string;
+	stateFile: string;
+}
+
+function splitChunks(text: string, max: number): string[] {
+	const chunks: string[] = [];
+	let remaining = text;
+	while (remaining.length > max) {
+		chunks.push(remaining.slice(0, max));
+		remaining = remaining.slice(max);
+	}
+	if (remaining) chunks.push(remaining);
+	return chunks;
 }
 
 export class TelegramBot {
 	private bot: Telegraf;
-	private client: BackendClient;
 	private hostClient: HostRunnerClient;
+	private linearClient: LinearClient;
 	private opts: TelegramBotOptions;
 	private log = pino({ name: "telegram-bot" });
 
-	/**
-	 * chatId → host project name. Presence routes the chat's prompts to the
-	 * host-runner project instead of a containerized workspace agent.
-	 */
 	private chatProject = new Map<number, string>();
-
-	/**
-	 * Maps chatId → agentId.
-	 * One agent per chat.
-	 */
-	private chatAgents = new Map<number, string>();
-
-	/**
-	 * Accumulate text output per agent between agent_start and agent_end.
-	 */
-	private pendingText = new Map<string, string>();
+	private sendQueue = new Map<number, Promise<void>>();
 
 	constructor(opts: TelegramBotOptions) {
 		this.opts = opts;
 		this.bot = new Telegraf(opts.botToken);
-		this.client = new BackendClient({
-			baseUrl: opts.backendBaseUrl,
-			wsUrl: opts.backendWsUrl,
-		});
 		this.hostClient = new HostRunnerClient({
 			baseUrl: opts.hostRunnerBaseUrl,
 			wsUrl: opts.hostRunnerWsUrl,
 		});
+		this.linearClient = new LinearClient({ baseUrl: opts.linearUrl });
 
+		this.loadState();
 		this.setupBotHandlers();
-		this.setupWsHandlers();
 		this.setupHostWsHandlers();
 	}
 
 	async start(): Promise<void> {
-		this.client.connect();
 		this.hostClient.connect();
 
 		await this.bot.launch({ dropPendingUpdates: true });
@@ -75,156 +61,10 @@ export class TelegramBot {
 
 	stop(): void {
 		this.bot.stop("shutdown");
-		this.client.disconnect();
 		this.hostClient.disconnect();
 	}
 
-	// ── Bot command handlers ─────────────────────────
-
 	private setupBotHandlers(): void {
-		this.bot.command("start", async (ctx) => {
-			if (!this.isAllowed(ctx.chat.id)) {
-				return ctx.reply("❌ Not authorized.");
-			}
-
-			// Kill existing agent for this chat
-			const existingId = this.chatAgents.get(ctx.chat.id);
-			if (existingId) {
-				try {
-					await this.client.killAgent(existingId);
-				} catch {
-					// ignore
-				}
-			}
-
-			try {
-				const agent = await this.client.spawnAgent({
-					name: `tg-${ctx.chat.id}`,
-					cwd: this.opts.workspace,
-					provider: this.opts.piProvider,
-					model: this.opts.piModel,
-					sessionId: `tg-${ctx.chat.id}`,
-					resumeSession: true,
-				});
-
-				this.chatAgents.set(ctx.chat.id, agent.id);
-				this.client.subscribe(agent.id);
-
-				await ctx.reply(
-					[
-						"🟢 *Pi agent session started!*",
-						"",
-						"Just send me your prompts.",
-						"",
-						"*Commands:*",
-						"`/start` — new session (kills current)",
-						"`/stop` — end session",
-						"`/new` — fresh conversation (same process)",
-						"`/abort` — abort current operation",
-						"`/status` — show session info",
-						"`/system` — system-wide status",
-						"`/project <name>` — work in a host project",
-						"`/repo <owner/name>` — clone a repo and work in it",
-						"`/local` — back to the workspace agent",
-					].join("\n"),
-					{ parse_mode: "Markdown" },
-				);
-			} catch (err) {
-				const msg = err instanceof Error ? err.message : "unknown error";
-				await ctx.reply(`❌ Failed to start agent: ${msg}`);
-			}
-		});
-
-		this.bot.command("stop", async (ctx) => {
-			if (!this.isAllowed(ctx.chat.id)) return;
-			const agentId = this.chatAgents.get(ctx.chat.id);
-			if (agentId) {
-				try {
-					await this.client.killAgent(agentId);
-				} catch {
-					// ignore
-				}
-				this.chatAgents.delete(ctx.chat.id);
-				await ctx.reply("🔴 Session stopped.");
-			} else {
-				await ctx.reply("No active session. Use /start to begin.");
-			}
-		});
-
-		this.bot.command("new", async (ctx) => {
-			if (!this.isAllowed(ctx.chat.id)) return;
-			const agentId = this.chatAgents.get(ctx.chat.id);
-			if (agentId) {
-				try {
-					await this.client.newSession(agentId);
-					await ctx.reply(
-						"🔄 Fresh conversation started (agent process kept alive).",
-					);
-				} catch {
-					await ctx.reply("❌ Failed to reset session.");
-				}
-			} else {
-				await ctx.reply("No active session. Use /start to begin.");
-			}
-		});
-
-		this.bot.command("abort", async (ctx) => {
-			if (!this.isAllowed(ctx.chat.id)) return;
-			const agentId = this.chatAgents.get(ctx.chat.id);
-			if (agentId) {
-				try {
-					await this.client.abortAgent(agentId);
-					await ctx.reply("⛔ Sent abort signal.");
-				} catch {
-					await ctx.reply("❌ Failed to abort.");
-				}
-			} else {
-				await ctx.reply("No active session.");
-			}
-		});
-
-		this.bot.command("status", async (ctx) => {
-			if (!this.isAllowed(ctx.chat.id)) return;
-			const agentId = this.chatAgents.get(ctx.chat.id);
-			if (agentId) {
-				try {
-					const info = await this.client.getAgent(agentId);
-					await ctx.reply(
-						`🟢 *Session active* · ${info.status}\nAgent: \`${info.id}\`\nWorkdir: \`${info.cwd}\``,
-						{ parse_mode: "Markdown" },
-					);
-				} catch {
-					await ctx.reply("🔴 Agent not found. Use /start to begin.");
-					this.chatAgents.delete(ctx.chat.id);
-				}
-			} else {
-				await ctx.reply("🔴 No active session. Use /start to begin.");
-			}
-		});
-
-		this.bot.command("system", async (ctx) => {
-			if (!this.isAllowed(ctx.chat.id)) return;
-			try {
-				const status = await this.client.getStatus();
-				const agentLines = status.agents.map(
-					(a: AgentInfo) =>
-						`  • \`${a.name}\` (${a.status}) — ${a.currentTask || "idle"}`,
-				);
-				await ctx.reply(
-					[
-						`⚙️ *System Status*`,
-						`Uptime: ${Math.round(status.uptime / 1000)}s`,
-						`Agents: ${status.agentCount}`,
-						...agentLines,
-					].join("\n"),
-					{ parse_mode: "Markdown" },
-				);
-			} catch (err) {
-				const msg = err instanceof Error ? err.message : "unknown";
-				await ctx.reply(`❌ Backend error: ${msg}`);
-			}
-		});
-
 		this.bot.command("project", async (ctx) => {
 			if (!this.isAllowed(ctx.chat.id)) return;
 			const name = ctx.message.text.split(/\s+/)[1]?.trim();
@@ -232,164 +72,187 @@ export class TelegramBot {
 			try {
 				allowed = (await this.hostClient.listProjects()).allowed;
 			} catch (err) {
-				const msg = err instanceof Error ? err.message : "unknown";
-				return ctx.reply(`❌ Host runner unreachable: ${msg}`);
+				return this.send(ctx.chat.id, this.unreachable("host-runner", err));
 			}
 			if (!name) {
-				return ctx.reply(
+				return this.send(
+					ctx.chat.id,
 					[
 						"*Host projects* — send `/project <name>` to work in one:",
 						...allowed.map((p) => `• \`${p}\``),
-						"",
-						"`/local` — switch back to the workspace agent.",
 					].join("\n"),
-					{ parse_mode: "Markdown" },
 				);
 			}
 			if (!allowed.includes(name)) {
-				return ctx.reply(
+				return this.send(
+					ctx.chat.id,
 					`❌ Unknown project "${name}". Allowed: ${allowed.join(", ")}`,
 				);
 			}
-			this.chatProject.set(ctx.chat.id, name);
-			await ctx.reply(
-				`🗂️ Now working in host project *${name}*.\nSend prompts; \`/local\` to switch back.`,
-				{ parse_mode: "Markdown" },
+			this.setProject(ctx.chat.id, name);
+			this.send(
+				ctx.chat.id,
+				`🗂️ Now working in host project *${name}*. Send prompts to it directly.`,
 			);
 		});
 
-		this.bot.command("local", async (ctx) => {
+		this.bot.command(["ticket", "ops"], async (ctx) => {
 			if (!this.isAllowed(ctx.chat.id)) return;
-			if (this.chatProject.delete(ctx.chat.id)) {
-				await ctx.reply("💻 Switched back to the workspace agent.");
-			} else {
-				await ctx.reply("Already on the workspace agent.");
+			const ops = ctx.message.text.startsWith("/ops");
+			const match = ctx.message.text.match(TICKET_RE);
+			if (!match) {
+				return this.send(
+					ctx.chat.id,
+					`Usage: \`/${ops ? "ops" : "ticket"} <project> <title>\` then description on following lines.`,
+				);
+			}
+			const [, project, title, description] = match;
+			try {
+				const result = await this.linearClient.createTicket({
+					project,
+					title: title.trim(),
+					description: description.trim() || undefined,
+					ops,
+				});
+				this.send(ctx.chat.id, `🎫 ${result.identifier} ${result.url}`);
+			} catch (err) {
+				this.send(ctx.chat.id, this.unreachable("linear-connector", err));
 			}
 		});
 
-		this.bot.command("repo", async (ctx) => {
+		this.bot.command("agents", async (ctx) => {
 			if (!this.isAllowed(ctx.chat.id)) return;
-			const arg = ctx.message.text.split(/\s+/)[1]?.trim();
-			if (!arg) {
-				return ctx.reply("Usage: `/repo owner/name`", {
-					parse_mode: "Markdown",
-				});
-			}
-			await ctx.reply(`📦 Cloning \`${arg}\`…`, { parse_mode: "Markdown" });
-
-			let cloned: { name: string; path: string };
-			try {
-				cloned = await this.client.cloneRepo(arg);
-			} catch (err) {
-				const msg = err instanceof Error ? err.message : "unknown";
-				return ctx.reply(`❌ Clone failed: ${msg}`);
-			}
-
-			this.chatProject.delete(ctx.chat.id);
-			const existingId = this.chatAgents.get(ctx.chat.id);
-			if (existingId) {
-				try {
-					await this.client.killAgent(existingId);
-				} catch {
-					// ignore
-				}
-			}
+			const lines: string[] = [];
 
 			try {
-				const agent = await this.client.spawnAgent({
-					name: `tg-${ctx.chat.id}`,
-					cwd: cloned.path,
-					provider: this.opts.piProvider,
-					model: this.opts.piModel,
-					sessionId: `tg-${ctx.chat.id}`,
-					resumeSession: false,
-				});
-				this.chatAgents.set(ctx.chat.id, agent.id);
-				this.client.subscribe(agent.id);
-				await ctx.reply(
-					`✅ Working in *${cloned.name}*. Send prompts — the agent can branch, commit, and open PRs.`,
-					{ parse_mode: "Markdown" },
+				const projects = await this.hostClient.listProjects();
+				lines.push("*Host projects running:*");
+				lines.push(
+					...(projects.running.length
+						? projects.running.map((p) => `• \`${p}\``)
+						: ["  (none)"]),
 				);
 			} catch (err) {
-				const msg = err instanceof Error ? err.message : "unknown";
-				await ctx.reply(`❌ Failed to start agent: ${msg}`);
+				lines.push(this.unreachable("host-runner", err));
 			}
-		});
 
-		// ── Default: forward text to agent ───────────
-
-		this.bot.on("text", async (ctx) => {
-			if (!this.isAllowed(ctx.chat.id)) return;
+			try {
+				const tasks = await this.linearClient.tasks();
+				lines.push("*Linear tasks:*");
+				lines.push(
+					...(tasks.length
+						? tasks.map((t) => {
+								const age = Math.max(
+									0,
+									Math.round((Date.now() - t.startedAt) / 60_000),
+								);
+								return `• \`${t.identifier}\` ${t.project} (${t.mode}) — ${t.title} (${age}m ago)`;
+							})
+						: ["  (none)"]),
+				);
+			} catch (err) {
+				lines.push(this.unreachable("linear-connector", err));
+			}
 
 			const project = this.chatProject.get(ctx.chat.id);
-			if (project) {
+			lines.push(`this chat → ${project ?? "none"}`);
+			this.send(ctx.chat.id, lines.join("\n"));
+		});
+
+		this.bot.command("abort", async (ctx) => {
+			if (!this.isAllowed(ctx.chat.id)) return;
+			const arg = ctx.message.text.split(/\s+/)[1]?.trim();
+			if (arg && /^[A-Z]+-\d+$/i.test(arg)) {
 				try {
-					await this.hostClient.prompt(project, ctx.message.text);
+					await this.linearClient.abortTask(arg);
+					this.send(ctx.chat.id, `⛔ Aborted ${arg}.`);
 				} catch (err) {
-					const msg = err instanceof Error ? err.message : "unknown";
-					await ctx.reply(`❌ Prompt to ${project} failed: ${msg}`);
+					this.send(ctx.chat.id, this.unreachable("linear-connector", err));
 				}
 				return;
 			}
-
-			let agentId = this.chatAgents.get(ctx.chat.id);
-
-			// Auto-start if no session
-			if (!agentId) {
-				try {
-					const agent = await this.client.spawnAgent({
-						name: `tg-${ctx.chat.id}`,
-						cwd: this.opts.workspace,
-						provider: this.opts.piProvider,
-						model: this.opts.piModel,
-						sessionId: `tg-${ctx.chat.id}`,
-						resumeSession: true,
-					});
-					agentId = agent.id;
-					this.chatAgents.set(ctx.chat.id, agentId);
-					this.client.subscribe(agentId);
-					// Brief pause for pi to initialise
-					await new Promise((r) => setTimeout(r, 300));
-				} catch (err) {
-					const msg = err instanceof Error ? err.message : "unknown";
-					await ctx.reply(`❌ Could not start agent: ${msg}`);
-					return;
-				}
+			const project = this.chatProject.get(ctx.chat.id);
+			if (!project) {
+				return this.send(ctx.chat.id, "pick a project: `/project <name>`");
 			}
-
 			try {
-				await this.client.promptAgent(agentId, ctx.message.text);
+				await this.hostClient.abort(project);
+				this.send(ctx.chat.id, "⛔ Sent abort signal.");
 			} catch (err) {
-				const msg = err instanceof Error ? err.message : "unknown";
-				await ctx.reply(`❌ Prompt failed: ${msg}`);
+				this.send(ctx.chat.id, this.unreachable("host-runner", err));
 			}
 		});
-	}
 
-	// ── WebSocket event handlers ─────────────────────
-
-	private setupWsHandlers(): void {
-		this.client.on("ws:connected", () => {
-			this.log.info("Connected to backend WebSocket");
+		this.bot.command("new", async (ctx) => {
+			if (!this.isAllowed(ctx.chat.id)) return;
+			const project = this.chatProject.get(ctx.chat.id);
+			if (!project) {
+				return this.send(ctx.chat.id, "pick a project: `/project <name>`");
+			}
+			try {
+				await this.hostClient.newConversation(project);
+				this.send(ctx.chat.id, "🔄 Fresh conversation started.");
+			} catch (err) {
+				this.send(ctx.chat.id, this.unreachable("host-runner", err));
+			}
 		});
 
-		this.client.on("ws:disconnected", () => {
-			this.log.warn("Backend WebSocket disconnected");
+		this.bot.command("stop", async (ctx) => {
+			if (!this.isAllowed(ctx.chat.id)) return;
+			const project = this.chatProject.get(ctx.chat.id);
+			if (!project) {
+				return this.send(ctx.chat.id, "pick a project: `/project <name>`");
+			}
+			try {
+				await this.hostClient.stop(project);
+				this.send(ctx.chat.id, `🔴 Stopped ${project}.`);
+			} catch (err) {
+				this.send(ctx.chat.id, this.unreachable("host-runner", err));
+			}
 		});
 
-		this.client.on("ws:error", (err: Error) => {
-			this.log.error({ err }, "Backend WebSocket error");
+		this.bot.command("poll", async (ctx) => {
+			if (!this.isAllowed(ctx.chat.id)) return;
+			try {
+				const result = await this.linearClient.poll();
+				this.send(
+					ctx.chat.id,
+					`🔁 Polled Linear — dispatched ${result.dispatched}.`,
+				);
+			} catch (err) {
+				this.send(ctx.chat.id, this.unreachable("linear-connector", err));
+			}
 		});
 
-		// Route agent output back to the correct Telegram chat
-		this.client.on("ws:message", (msg: Record<string, unknown>) => {
-			const agentId = msg.agentId as string | undefined;
-			if (!agentId) return;
+		this.bot.command("help", (ctx) => {
+			if (!this.isAllowed(ctx.chat.id)) return;
+			this.send(
+				ctx.chat.id,
+				[
+					"*Commands:*",
+					"`/project <name>` — route this chat to a host project; plain text = prompt",
+					"`/ticket <project> <title>` — file a Linear ticket (agent opens a PR)",
+					"`/ops <project> <title>` — file an ops ticket (runbook, no PR)",
+					"`/agents` — running host projects + active Linear tasks",
+					"`/abort [KIR-123]` — abort a Linear task, or this chat's project",
+					"`/new` — fresh conversation in this chat's project",
+					"`/stop` — stop this chat's project agent",
+					"`/poll` — poll Linear now",
+				].join("\n"),
+			);
+		});
 
-			const chatId = this.agentToChatId(agentId);
-			if (!chatId) return;
-
-			this.handleAgentEvent(chatId, agentId, msg);
+		this.bot.on("text", async (ctx) => {
+			if (!this.isAllowed(ctx.chat.id)) return;
+			const project = this.chatProject.get(ctx.chat.id);
+			if (!project) {
+				return this.send(ctx.chat.id, "pick a project: `/project <name>`");
+			}
+			try {
+				await this.hostClient.prompt(project, ctx.message.text);
+			} catch (err) {
+				this.send(ctx.chat.id, this.unreachable("host-runner", err));
+			}
 		});
 	}
 
@@ -399,9 +262,6 @@ export class TelegramBot {
 		);
 		this.hostClient.on("ws:disconnected", () =>
 			this.log.warn("Host-runner WS disconnected"),
-		);
-		this.hostClient.on("ws:error", (err: Error) =>
-			this.log.error({ err }, "Host-runner WS error"),
 		);
 		this.hostClient.on("ws:message", (msg: Record<string, unknown>) => {
 			const project = msg.project as string | undefined;
@@ -419,110 +279,64 @@ export class TelegramBot {
 		const type = event.type as string;
 		if (type === "message_complete") {
 			const text = (event.data as string) || "";
-			if (text.trim()) this.sendChunked(chatId, text.trim());
+			if (text.trim()) this.send(chatId, text.trim());
 		} else if (type === "tool_start") {
 			const data = event.data as Record<string, unknown>;
 			if (data?.toolName === "bash") {
 				const cmd = (data.args as Record<string, string>)?.command ?? "...";
 				const preview = cmd.length > 80 ? `${cmd.slice(0, 80)}…` : cmd;
-				this.tg(chatId, `🔧 \`${preview}\``);
+				this.send(chatId, `🔧 \`${preview}\``);
 			}
 		}
 	}
 
-	private handleAgentEvent(
-		chatId: number,
-		agentId: string,
-		event: Record<string, unknown>,
-	): void {
-		const type = event.type as string;
-
-		switch (type) {
-			case "status_change": {
-				const data = event.data as Record<string, unknown>;
-				if (data.status === "running") {
-					this.pendingText.set(agentId, "");
-				}
-				break;
+	private loadState(): void {
+		try {
+			const raw = readFileSync(this.opts.stateFile, "utf-8");
+			const data = JSON.parse(raw) as { chatProject?: Record<string, string> };
+			for (const [chatId, project] of Object.entries(data.chatProject ?? {})) {
+				this.chatProject.set(Number(chatId), project);
 			}
-
-			case "text": {
-				// Accumulate text deltas
-				const current = this.pendingText.get(agentId) || "";
-				this.pendingText.set(agentId, current + ((event.data as string) || ""));
-				break;
-			}
-
-			case "message_complete": {
-				// Send the complete message
-				const text = (event.data as string) || "";
-				if (text.trim()) {
-					this.sendChunked(chatId, text.trim());
-				}
-				this.pendingText.delete(agentId);
-				break;
-			}
-
-			case "tool_start": {
-				const data = event.data as Record<string, unknown>;
-				if (data.toolName === "bash") {
-					const cmd = (data.args as Record<string, string>)?.command ?? "...";
-					const preview = cmd.length > 80 ? cmd.slice(0, 80) + "…" : cmd;
-					this.tg(chatId, `🔧 \`${preview}\``);
-				}
-				break;
-			}
-
-			case "agent_exit": {
-				const data = event.data as Record<string, unknown>;
-				this.tg(chatId, `🔴 Agent exited (code ${data.code ?? "?"})`);
-				this.chatAgents.delete(chatId);
-				this.pendingText.delete(agentId);
-				break;
-			}
-		}
+		} catch {}
 	}
 
-	// ── Helpers ──────────────────────────────────────
+	private saveState(): void {
+		const chatProject: Record<string, string> = {};
+		for (const [chatId, project] of this.chatProject) chatProject[chatId] = project;
+		mkdirSync(dirname(this.opts.stateFile), { recursive: true });
+		writeFileSync(this.opts.stateFile, JSON.stringify({ chatProject }));
+	}
+
+	private setProject(chatId: number, project: string): void {
+		this.chatProject.set(chatId, project);
+		this.saveState();
+	}
 
 	private isAllowed(chatId: number): boolean {
 		if (this.opts.allowedChatIds.length === 0) return true;
 		return this.opts.allowedChatIds.includes(chatId);
 	}
 
-	/** Reverse lookup: agentId → chatId. */
-	private agentToChatId(agentId: string): number | null {
-		for (const [chatId, aId] of this.chatAgents) {
-			if (aId === agentId) return chatId;
-		}
-		return null;
+	private unreachable(service: string, err: unknown): string {
+		const msg = err instanceof Error ? err.message : "unknown error";
+		return `❌ ${service} unreachable: ${msg}`;
 	}
 
-	private tg(chatId: number, text: string): void {
-		this.bot.telegram
-			.sendMessage(chatId, text, { parse_mode: "Markdown" })
-			.catch(() => this.bot.telegram.sendMessage(chatId, text).catch(() => {}));
+	private send(chatId: number, text: string): void {
+		for (const chunk of splitChunks(text, TG_MAX_LEN)) {
+			const prior = this.sendQueue.get(chatId) ?? Promise.resolve();
+			const next = prior.catch(() => {}).then(() => this.deliver(chatId, chunk));
+			this.sendQueue.set(chatId, next);
+		}
 	}
 
-	private sendChunked(chatId: number, text: string): void {
-		const chunks: string[] = [];
-		let remaining = text;
-		while (remaining.length > TG_MAX_LEN) {
-			chunks.push(remaining.slice(0, TG_MAX_LEN));
-			remaining = remaining.slice(TG_MAX_LEN);
+	private async deliver(chatId: number, text: string): Promise<void> {
+		try {
+			await this.bot.telegram.sendMessage(chatId, text, {
+				parse_mode: "Markdown",
+			});
+		} catch {
+			await this.bot.telegram.sendMessage(chatId, text).catch(() => {});
 		}
-		if (remaining) chunks.push(remaining);
-
-		(async () => {
-			for (const chunk of chunks) {
-				await this.bot.telegram
-					.sendMessage(chatId, chunk, {
-						parse_mode: "Markdown",
-					})
-					.catch(() =>
-						this.bot.telegram.sendMessage(chatId, chunk).catch(() => {}),
-					);
-			}
-		})();
 	}
 }

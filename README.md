@@ -1,103 +1,284 @@
 # Robot Mill
 
-Runs the [pi coding agent](https://github.com/badlogic/pi-mono) in a container and
-drives it remotely over Telegram. Send prompts from your phone; pi does the work
-inside the container against your repos.
+Runs the [pi coding agent](https://github.com/badlogic/pi-mono) against your real
+repos, driven from Telegram or from Linear. One runtime spawns every agent: the
+**host-runner**. Nothing else spawns agents.
 
 ## Architecture
 
 ```
-Telegram ──► telegram-frontend ──HTTP+WS──► robot-fastify-backend ──► pi --mode rpc ──► your repos
+Linear (Agent Queue) ──► linear-connector ──► host-runner ──► tmux `pi-<key>` ──► your repos
+Telegram              ──► telegram-frontend ──┘
+                                                    │
+                                     robot-fastify-backend (console + aggregator)
 ```
 
-- **`robot-fastify-backend`** — Fastify server that spawns and supervises one `pi`
-  process per session (RPC mode: JSONL over stdin/stdout), exposing them over a REST
-  API and a `/ws` WebSocket that streams agent events.
-- **`telegram-frontend`** — Telegraf bot. One pi session per chat; forwards your
-  messages as prompts and streams pi's output back.
-- **`web-variations-frontend`** — experimental React UI for the backend's variation
-  manager. Currently **disabled** (commented out in `docker-compose.yml`); the
-  backend code stays so it can be re-integrated later.
+- **`host-runner`** — runs directly on the host under `bun`. Every pi agent runs
+  here, each in its own tmux session named `pi-<key>`, with full host access
+  (files, `docker compose`, scripts). Nothing else runs pi.
+- **`linear-connector`** — the single entry point for autonomous work. Polls a
+  Linear team's states, dispatches queued issues to the host-runner, tracks them
+  to completion, and pushes its own Telegram notifications.
+- **`telegram-frontend`** — Telegraf bot (containerized). Routes a chat to a host
+  project (`/project`), files Linear tickets (`/ticket`, `/ops`), and shows what's
+  running (`/agents`).
+- **`health-monitor`** — scheduled deterministic health checks of other host
+  projects, with a low-cost model escalation on failure and its own Telegram
+  notifications.
+- **`robot-fastify-backend`** — containerized. Serves the web console + homepage
+  and aggregates/proxies the host-runner, health-monitor and linear-connector for
+  it. Its `AgentManager`/`/agents`/`/ws` code is retained only because the
+  variation-manager and its tests need it — nothing user-facing talks to it, and
+  Telegram never does. The variation-manager itself is gated behind
+  `VARIATIONS_ENABLED` (default off: not constructed, no routes, no port range).
+- **`web-variations-frontend`** — the variation-manager's UI. Only relevant when
+  `VARIATIONS_ENABLED=true`.
 
 ## Repository layout
 
 ```
 robot-mill/
 ├── Dockerfile                 single image for backend + telegram (shared entrypoint)
-├── docker-compose.yml         backend + telegram (behind `telegram` profile)
+├── docker-compose.yml         backend + telegram (behind the `telegram` profile)
 ├── .env.example
 ├── install/                   image build steps
-│   ├── 00-base.sh             system packages, locale
-│   ├── 10-node.sh             Node.js 22 + pinned pi agent (global)
-│   ├── 11-bun.sh              Bun
-│   ├── 20-mise.sh             mise — per-project language versions
-│   ├── 30-github.sh           GitHub CLI (gh)
-│   ├── 40-user-setup.sh       'agent' user, workspace, SSH dir
-│   └── 50-entrypoint.sh       writes /home/agent/entrypoint.sh (runs the compose command)
-├── robot-fastify-backend/     agent orchestration server (containerized, /workspace)
-├── telegram-frontend/         Telegram bot
-├── discord-frontend/          Discord bot (same commands, behind `discord` profile)
-├── host-runner/               pi agents in host tmux sessions on real projects
-├── linear-connector/          dispatches Linear issues to agents
-├── health-monitor/            scheduled health checks via host agents
-├── web-console/               homepage: poop house dashboard + robot-mill console (served at / and /console)
-├── web-variations-frontend/   experimental UI (disabled)
-├── scripts/deploy-remote.fish redeploy to the peeper box
+├── robot-fastify-backend/     console + aggregator (containerized, /workspace)
+├── telegram-frontend/         Telegram bot (containerized)
+├── host-runner/                pi agents in host tmux sessions on real projects
+├── linear-connector/           dispatches Linear issues to host-runner tasks
+├── health-monitor/             scheduled host-project health checks
+├── web-console/                homepage + robot-mill console (served at / and /console)
+├── web-variations-frontend/    variation-manager UI (VARIATIONS_ENABLED only)
+├── scripts/                    start-host.sh, boot.sh, rolling-log.ts, deploy-remote.fish
 └── DEPLOYMENT_NOTES.md
 ```
 
-## AI provider
+## Where agents run
 
-Set `PI_PROVIDER` and the matching key — startup validation only requires the key
-for the selected provider:
+| Key (tmux `pi-<key>`) | cwd | Created by | Purpose |
+|---|---|---|---|
+| `<project>` | `~/Projects/<project>` | Telegram `/project` chat, console prompt box; health-monitor diagnosis uses a throwaway `diag-*` key | interactive |
+| `<project>-<issue>`, e.g. `nightcrawler-kir-123` | `~/robot-mill/worktrees/<project>/kir-123` | linear-connector, a code ticket | worktree → branch → PR |
+| `<project>-<issue>` | `~/Projects/<project>` (main checkout) | linear-connector, a ticket labelled `ops` | runbook/deploy, no PR |
 
-| `PI_PROVIDER` | Key env var | `PI_MODEL` example |
-|---|---|---|
-| `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-8` |
-| `openrouter` | `OPENROUTER_API_KEY` | `anthropic/claude-opus-4.8`, `openai/gpt-4o` |
-| `openai` | `OPENAI_API_KEY` | `gpt-4o` |
+A worktree is created from the repo's default branch, on a branch named after
+the issue identifier (e.g. `kir-123`); the host-runner symlinks anything in the
+main checkout's top level that is itself a symlink (`.env`, `data`, …) into it,
+but does **not** install dependencies — the agent's own prompt tells it to run
+`bun install` / `npm ci` first.
 
-OpenRouter serves both Claude and GPT models, so a single `OPENROUTER_API_KEY` covers
-both with the `provider/id` model slug.
+Visibility: `tmux attach -t pi-<key>` to watch/steer any session directly, the
+console's live stream, or Telegram `/agents`.
 
-### Per-key cost attribution
+## Linear workflow
 
-Slices of work can each use their own key so OpenRouter reports cost per slice. Any
-unset key **falls back to the shared `OPENROUTER_API_KEY`** (`ANTHROPIC_`/`OPENAI_`
-prefixes work the same way for those providers):
+Linear is the single entry point for ticket-driven work. Move an issue to
+**Agent Queue** (or file one from Telegram with `/ticket` or `/ops`) and the
+connector takes it from there.
 
-| Env var | Bills for | Set in |
-|---|---|---|
-| `OPENROUTER_API_KEY_BACKEND` | container workspace agents (incl. Telegram/Discord) | compose `.env` |
-| `OPENROUTER_API_KEY_<PROJECT>` | host-runner agents for that repo — **both** interactive `/project` and Linear `/task` runs. Name = uppercased repo with non-alphanumerics as `_` (e.g. `media-streaming` → `OPENROUTER_API_KEY_MEDIA_STREAMING`) | `host-runner.env` |
-| `OPENROUTER_API_KEY_SERVICE` | low-cost diagnostic/technical model | `host-runner.env`, `health-monitor.env` |
+**States** (env-overridable, auto-created where noted):
 
-### Service model
+| State | Meaning |
+|---|---|
+| `Agent Queue` (auto-created) | waiting to be picked up |
+| `In Progress` | an agent is running |
+| `In Review` | code ticket finished — PR opened |
+| `Done` | ops ticket finished |
+| `Agent Failed` (auto-created) | failed; move back to `Agent Queue` to retry |
 
-Health-check failures and other "technical" needs use a **separate, low-cost model**,
-`SERVICE_PI_MODEL` (default `anthropic/claude-haiku-4.5`), billed to
-`OPENROUTER_API_KEY_SERVICE`. It never touches the main agents' key or the expensive
-`PI_MODEL`.
+**Labels** (auto-created): `agent` — added to every ticket the connector picks
+up. `ops` — marks the ticket as a runbook/deploy task instead of a code change.
 
-## Quick start (Docker)
+**Resolving the target repo:** the issue's Linear *project* name, or a label,
+must match one of the host-runner's `ALLOWED_PROJECTS`. No match → a comment
+asking for one, then `Agent Failed`.
 
-```bash
-cp .env.example .env
-# Edit .env — set PI_PROVIDER + its key, TELEGRAM_BOT_TOKEN, ALLOWED_CHAT_IDS,
-# and GITHUB_TOKEN (needed for the agent to clone private repos and open PRs).
+**Flow:**
 
-docker compose --profile telegram up --build -d
-docker compose --profile telegram logs -f
+1. `Agent Queue` → label `agent`, comment `🤖 started in <project> (<mode>) ·
+   tmux attach -t pi-<key>`, move to `In Progress`, `POST /task` to the
+   host-runner.
+2. **Code ticket:** the agent works in a dedicated git worktree, is asked to
+   commit, push the branch and open a pull request via the GitHub REST API
+   (`gh` is not installed in the host-runner's environment — the agent uses
+   `$GITHUB_TOKEN` directly). On success the connector looks up the PR by
+   branch, comments its URL, and moves the issue to `In Review`.
+3. **Ops ticket** (label `ops`): the agent works in the project's main checkout
+   on the host, follows that project's `AGENTS.md` runbook, and must not create
+   branches or PRs. On success the connector comments the agent's summary and
+   moves the issue to `Done`.
+4. **Any failure** (agent process exited, timed out — default `TASK_TIMEOUT_MS`
+   2h — or the host-runner request itself failed) → comment `❌ <reason>` and
+   move to `Agent Failed`.
+5. After every finalize: the host-runner task is torn down (tmux session
+   killed, worktree removed — the pushed branch is kept — status file deleted) and a
+   Telegram notification is sent.
+6. **On connector restart:** any issue still `In Progress` and labelled `agent`
+   is re-tracked from where it left off, rather than abandoned.
+
+Notifications (start / success / failure) are pushed directly to Telegram by
+the linear-connector and, separately, by the health-monitor — each holds its
+own bot token + chat id.
+
+## Telegram commands
+
+Any message that isn't a command is forwarded to the chat's current project as
+a prompt.
+
+| Command | Description |
+|---|---|
+| `/project <name>` | Route this chat to a host project (plain text becomes a prompt to it) |
+| `/ticket <project> <title>\n<description>` | File a Linear code ticket — the agent opens a PR |
+| `/ops <project> <title>\n<description>` | File a Linear ops ticket — runbook, no PR |
+| `/agents` | Running host projects + active Linear tasks, and this chat's current project |
+| `/abort [KIR-123]` | Abort a Linear task by identifier, or this chat's project agent if none given |
+| `/new` | Reset the conversation, keep the same pi process |
+| `/stop` | Stop this chat's project agent |
+| `/poll` | Poll Linear right now instead of waiting for the interval |
+
+### Register with BotFather
+
+```
+project - Route this chat to a host project: /project <name>
+ticket - File a Linear ticket for an agent: /ticket <project> <title>
+ops - File an ops ticket (runbook, no PR): /ops <project> <title>
+agents - Show running host projects + active Linear tasks
+abort - Abort a Linear task or this chat's project agent
+new - Fresh conversation in this chat's project
+stop - Stop this chat's project agent
+poll - Poll Linear now
 ```
 
-Backend health:
+## Web console + homepage
 
-```bash
-curl http://localhost:3100/health_check   # {"status":"ok"}
+Served by the backend at the site root (`http://<host>/`) and
+`http://<host>:3100/console`, with three title tabs: **poop house** (a
+dashboard of media-streaming service links), **robot mill** (host runners with
+a per-project prompt box, a tickets card listing active Linear tasks, and
+system status), and **nightcrawler** (a landing page for the nightcrawler
+search UI). The browser only talks to the backend; the backend aggregates and
+proxies the host-runner, health-monitor and linear-connector.
+
+## Components — env vars
+
+### `host-runner` (host, tmux, port `3200`)
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `HOST_RUNNER_HOST` | `0.0.0.0` | listen address |
+| `HOST_RUNNER_PORT` | `3200` | listen port |
+| `PROJECTS_DIR` | `~/Projects` | where main checkouts live |
+| `STATE_DIR` | `~/robot-mill/host-runner` | session/status state |
+| `WORKTREES_DIR` | `~/robot-mill/worktrees` | where Linear code-ticket worktrees are created |
+| `SESSION_MAX_AGE_MS` | 24h | a session file older than this is dropped before reuse (fresh pi conversation) |
+| `ALLOWED_PROJECTS` | (any dir under `PROJECTS_DIR`) | comma-separated allow-list; also what Linear project names/labels resolve against |
+| `PI_PROVIDER` | `openrouter` | `anthropic` \| `openrouter` \| `openai` |
+| `PI_MODEL` | — | model slug for interactive/ticket agents |
+| `SERVICE_PI_PROVIDER` | `PI_PROVIDER` | provider for the low-cost diagnose model |
+| `SERVICE_PI_MODEL` | `anthropic/claude-haiku-4.5` | health-monitor diagnose model |
+| provider key (`ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `OPENAI_API_KEY`) | — | required for the selected `PI_PROVIDER`; per-project override `<KEY>_<PROJECT>`, service override `<KEY>_SERVICE` |
+| `GITHUB_TOKEN` | — | used by ticket agents to open PRs via the GitHub REST API |
+
+### `linear-connector` (host, tmux, port `3400`)
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `LINEAR_API_KEY` | — | required |
+| `LINEAR_TEAM_KEY` | `KIR` | Linear team |
+| `LINEAR_TRIGGER_STATE` | `Agent Queue` | auto-created |
+| `LINEAR_IN_PROGRESS_STATE` | `In Progress` | |
+| `LINEAR_REVIEW_STATE` | `In Review` | |
+| `LINEAR_DONE_STATE` | `Done` | |
+| `LINEAR_FAILED_STATE` | `Agent Failed` | auto-created |
+| `LINEAR_AGENT_LABEL` | `agent` | auto-created |
+| `LINEAR_OPS_LABEL` | `ops` | |
+| `HOST_RUNNER_URL` | `http://127.0.0.1:3200` | |
+| `POLL_INTERVAL_MS` | 1h | how often to scan `Agent Queue` |
+| `TICK_MS` | 30s | how often to check active tasks' status |
+| `TASK_TIMEOUT_MS` | 2h | abort + fail a task that runs longer than this |
+| `MAX_CONCURRENT_TASKS` | `3` | |
+| `LINEAR_CONNECTOR_PORT` | `3400` | its own HTTP API (`/tasks`, `/poll`, `/tickets`, `/tasks/:id/abort`) |
+| `GITHUB_TOKEN` | — | used to look up a ticket's PR by branch |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | optional; notifications off if either is unset |
+
+### `health-monitor` (host, tmux, port `3300`)
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `HOST_RUNNER_URL` | `http://127.0.0.1:3200` | used for the diagnose escalation |
+| `PROJECTS_DIR` | `~/Projects` | |
+| `HEALTH_PORT` | `3300` | |
+| `SERVICE_PROJECTS` | `media-streaming,robot-mill,nightcrawler` | projects checked on a schedule |
+| `CHECK_INTERVAL_MS` | 24h | |
+| `CHECK_TIMEOUT_MS` | 2min | per-check subprocess timeout |
+| `DIAGNOSE_ON_FAILURE` | `true` | escalate a failing check to the service model |
+| `DIAGNOSE_TIMEOUT_MS` | 5min | |
+| `PI_PROVIDER` / `PI_MODEL` | `openrouter` / — | diagnose model; provider key resolved the same way as host-runner's service key (`<KEY>_SERVICE` override) |
+| `MIN_CREDITS_USD` | `10` | low-balance threshold for the `openrouter` check |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | optional; notifications off if either is unset |
+
+Each check is deterministic (no model tokens) unless it fails: `<service
+project>` runs the project's `scripts/health-check.sh` if present, else falls
+back to `docker compose ps` parsing; `openrouter` hits the OpenRouter
+`/credits` and `/models` endpoints. On failure the monitor escalates once, in a
+fresh throwaway host-runner session, to the low-cost `SERVICE_PI_MODEL`, which
+investigates, attempts a safe fix, and reports a `HEALTH: OK`/`HEALTH: FAIL`
+verdict. Telegram is notified on the transition into failure and, separately,
+on recovery — not on the interim "diagnosing…" step. Status: `http://127.0.0.1:3300/`
+(text) and `/health` (JSON).
+
+### `telegram-frontend` (container)
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | — | required |
+| `ALLOWED_CHAT_IDS` | (any) | comma-separated; empty allows everyone (dev only) |
+| `HOST_RUNNER_URL` | `http://host.docker.internal:3200` | |
+| `HOST_RUNNER_WS_URL` | `ws://host.docker.internal:3200/ws` | streams a project agent's output back to its chat |
+| `LINEAR_URL` | `http://host.docker.internal:3400` | |
+| `STATE_FILE` | `/data/telegram/state.json` | persists each chat's current project across restarts |
+
+### `robot-fastify-backend` (container, port `3100`)
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `PI_PROVIDER` / `PI_MODEL` | `anthropic` / — | AI provider config |
+| `HOST_RUNNER_URL` | `http://host.docker.internal:3200` | for the console's aggregation/proxy |
+| `HEALTH_URL` | `http://host.docker.internal:3300` | |
+| `LINEAR_URL` | `http://host.docker.internal:3400` | for the console's tickets card |
+| `VARIATIONS_ENABLED` | `false` | construct the variation-manager and its routes |
+| `LOG_LEVEL` | `info` | |
+
+## Running the host components
+
+`host-runner`, `linear-connector` and `health-monitor` are host-native tmux
+processes (not containers) — they need real host access (tmux, `docker
+compose`, other projects' checkouts).
+
+Start one:
+
+```sh
+scripts/start-host.sh host-runner
+scripts/start-host.sh linear-connector
+scripts/start-host.sh health-monitor
 ```
 
-To get your Telegram chat ID for `ALLOWED_CHAT_IDS`: message the bot, then
-`curl "https://api.telegram.org/bot<TOKEN>/getUpdates"` and read `message.chat.id`.
+Each reads its secrets from `~/.envs/robot-mill/<component>.env` (required for
+`host-runner` and `linear-connector`; optional for `health-monitor`), runs
+under tmux session `robot-mill-<component>` with auto-restart, and pipes its
+output through `scripts/rolling-log.ts` into
+`~/robot-mill/logs/<component>-YYYY-MM-DD.log` (also echoed live to the tmux
+pane). Logs older than `LOG_KEEP_DAYS` (default `14`) are pruned at start and
+on every date change.
+
+Start all three and register them to come back on reboot:
+
+```sh
+scripts/boot.sh
+```
+
+`scripts/boot.sh` is what the crontab `@reboot` entry runs (installed
+idempotently by `scripts/deploy-remote.fish`).
 
 ## Deploy to peeper
 
@@ -106,235 +287,58 @@ To get your Telegram chat ID for `ALLOWED_CHAT_IDS`: message the bot, then
 ./scripts/deploy-remote.fish --telegram <branch>
 ```
 
-`.env` is gitignored and lives only on the remote — the deploy script never touches
-it. See `DEPLOYMENT_NOTES.md` for the full remote setup.
+Pulls the branch, rebuilds and restarts the `backend` (+ `telegram` if
+`--telegram`) containers, restarts the three host components via
+`scripts/start-host.sh`, (re)installs the `@reboot scripts/boot.sh` crontab
+entry, and health-checks ports `3100`/`3200`/`3300`/`3400`. Targets the `peeper`
+SSH alias by default; override with `ROBOT_MILL_SSH=<host>` if it's
+unreachable (e.g. off the home LAN — see `DEPLOYMENT_NOTES.md`).
 
-## Components & toggles
+`.env` is gitignored and lives only on the remote — the deploy script never
+touches it.
 
-Optional containerized components are gated by **Compose profiles** — enable them
-per deploy with flags (they combine); omit a flag to leave one off. No need to edit
-`docker-compose.yml`.
-
-| Component | Type | Enable | Disable |
-|-----------|------|--------|---------|
-| `backend` | container | always on | — |
-| `telegram` | container profile | `deploy --telegram` | omit the flag |
-| `discord` | container profile | `deploy --discord` | omit the flag |
-| `web` (variations UI) | container profile | `deploy --web` | omit the flag |
-| `host-runner` | host tmux | `host-runner/start.sh` | `tmux kill-session -t robot-mill-host-runner` |
-| `linear-connector` | host tmux | `linear-connector/start.sh` | `tmux kill-session -t robot-mill-linear` |
-| `health-monitor` | host tmux | `health-monitor/start.sh` | `tmux kill-session -t robot-mill-health` |
-
-```fish
-./scripts/deploy-remote.fish --telegram --discord   # backend + both bots
-```
-
-Host-native components (`host-runner`, `linear-connector`) aren't compose services —
-start/stop them via their `start.sh` or by killing their tmux session.
-
-## Bot commands
-
-Any message that isn't a command is forwarded to the active agent as a prompt.
-Each chat has one active target: the containerized workspace agent by default, or
-a host project (`/project`) / cloned repo (`/repo`).
-
-**Session control**
-
-| Command | Description |
-|---------|-------------|
-| `/start` | Start a new workspace agent for this chat (kills any existing one) |
-| `/stop` | End the chat's session |
-| `/new` | Reset the conversation but keep the same pi process (clears context) |
-| `/abort` | Abort the operation the agent is currently running |
-
-**Choosing where the agent works**
-
-| Command | Description |
-|---------|-------------|
-| `/project <name>` | Route this chat to a real host project via the host-runner (e.g. `/project media-streaming` — then "restart the sonarr container"). Full host access. |
-| `/repo <owner/name>` | Clone a GitHub repo into the workspace and work in it (e.g. `/repo kirhgoff/eurotrip-support`). The agent can branch, commit, and open PRs. |
-| `/local` | Switch back to the default containerized workspace agent |
-
-**Info**
-
-| Command | Description |
-|---------|-------------|
-| `/status` | Show this chat's session state (agent id, workdir) |
-| `/system` | System-wide status: all running agents and what they're doing |
-
-### Register with BotFather
-
-Paste this into `@BotFather` → `/setcommands` so the commands appear in Telegram's
-command menu:
-
-```
-start - Start a new workspace agent (kills current)
-stop - End the session
-new - Reset conversation, keep the process
-abort - Abort the current operation
-project - Work in a host project: /project <name>
-repo - Clone and work in a repo: /repo <owner/name>
-local - Back to the workspace agent
-status - Show this chat's session state
-system - System-wide status of all agents
-```
-
-## Discord frontend
-
-Same capabilities as the Telegram bot, exposed in Discord. Commands use a prefix
-(default `!` — e.g. `!start`, `!project media-streaming`, `!repo owner/name`);
-any other message is forwarded to the active agent as a prompt. One agent per
-Discord channel.
-
-Setup:
-
-1. Create an application + bot at <https://discord.com/developers/applications>,
-   copy its token into `DISCORD_BOT_TOKEN`.
-2. Enable **Message Content Intent** (Bot → Privileged Gateway Intents) so the bot
-   can read messages.
-3. Invite the bot to your server with the *Send Messages* / *Read Message History*
-   permissions.
-4. Optionally set `ALLOWED_CHANNEL_IDS` (comma-separated channel IDs; empty = all).
-5. Deploy with the discord profile (flags combine):
-
-```fish
-./scripts/deploy-remote.fish --discord              # discord only
-./scripts/deploy-remote.fish --telegram --discord   # both bots
-```
-
-## Web console + homepage
-
-A mobile-friendly UI served by the backend at the **site root** — both
-**`http://<host>/`** and **`http://<host>:3100/console`**. It has three title
-tabs in the header:
-
-- **poop house** (selected by default) — a happy dashboard of links to all
-  media-streaming services (Jellyfin, Jellyseerr, Sonarr, Radarr, etc.). This
-  replaces the old media-streaming `portal` container, which has been removed.
-- **robot mill** — the dark cyberpunk management view: components/health, host
-  runners (with a per-project prompt box), container agents, and system status,
-  auto-refreshing every 5s, with switchable themes (cyberpunk / matrix / amber /
-  synthwave).
-- **nightcrawler** — a night/neon landing page linking to the nightcrawler
-  full-text search UI (`:3030`).
-
-Inactive title tabs are dimmed but tappable to switch views; the selection is
-remembered in `localStorage`. The homepage is exposed on port 80 via
-`HOMEPAGE_PORT` in `docker-compose.yml`.
-
-The browser only talks to the backend (same origin); the backend aggregates and
-proxies to the host-runner and health-monitor via `/api/overview` and
-`/api/host/:project/prompt`. It's a static single file (`web-console/index.html`) —
-no build step — baked into the image.
-
-## Host runner — agents on real host projects
-
-The backend runs agents inside the container in an isolated `/workspace`. The
-**host-runner** (runs directly on the host, under bun) instead runs one pi RPC
-session per real project on the host, each inside a tmux session named
-`pi-<project>`, with full host access (files, `docker compose`, scripts).
-
-- Config: `~/.envs/robot-mill/host-runner.env` (`HOST_RUNNER_PORT`, `PROJECTS_DIR`,
-  `ALLOWED_PROJECTS`, `PI_PROVIDER`, `PI_MODEL`, `SERVICE_PI_MODEL`, provider keys
-  — `OPENROUTER_API_KEY` plus optional per-repo `OPENROUTER_API_KEY_<PROJECT>` and
-  `_SERVICE` splits, `GITHUB_TOKEN`).
-- Start: `host-runner/start.sh` (launches tmux session `robot-mill-host-runner`).
-- Drive from Telegram with `/project <name>`; observe/steer with
-  `host-runner/attach.sh <project>` (i.e. `tmux attach -t pi-<project>`).
-- Git auth is injected per-agent via `GIT_CONFIG_*` env (uses `GITHUB_TOKEN`
-  without touching the host's `~/.gitconfig`).
-
-**Firewall note:** the host-runner is a raw host process (not a docker-published
-port), so the Telegram *container* reaching it via `host.docker.internal:3200` is
-subject to `ufw`. Allow the docker bridge subnets once:
+**Firewall note:** the host components are raw host processes (not
+docker-published ports), so the containers reaching them via
+`host.docker.internal` is subject to `ufw`:
 
 ```sh
-sudo ufw allow from 172.16.0.0/12 to any port 3200:3300 proto tcp
+sudo ufw allow from 172.16.0.0/12 to any port 3200:3400 proto tcp
 ```
 
-This covers the host-runner (`3200`) and the health-monitor (`3300`), both of which
-containers (telegram/discord/backend) reach via `host.docker.internal`. The
-linear-connector and health-monitor themselves run on the host and reach the
-host-runner over loopback, so they need no firewall change.
+## Ops runbooks
 
-## Health monitor
-
-Runs **deterministic** health checks on a schedule (default **once a day**) — no
-model tokens are spent unless a check actually fails:
-
-- **media-streaming** / **robot-mill** — runs the project's `scripts/health-check.sh`
-  if present (exit 0 = OK, non-zero = FAIL, last stdout line = detail), else falls
-  back to parsing `docker compose ps --format json` (every service `running` and,
-  where a healthcheck exists, `healthy`). robot-mill's script also curls the backend
-  `health_check`.
-- **eurotrip-support** — tracks last-sync age; if stale (>24h) it runs `bun run all`
-  directly and records the new timestamp (self-remediating, no model).
-- **openrouter** — hits the OpenRouter `/credits` and `/models` endpoints (free, no
-  tokens): flags a **low balance** (below `MIN_CREDITS_USD`, default `$10`) and warns
-  if `PI_MODEL` is missing from the provider catalog. This is the guard against a
-  runaway spend going unnoticed.
-
-**On failure** (`DIAGNOSE_ON_FAILURE=true`), the monitor escalates *once* to the
-low-cost service model (`SERVICE_PI_MODEL`, default `anthropic/claude-haiku-4.5`,
-billed to `OPENROUTER_API_KEY_SERVICE`) in a **fresh throwaway context** via the
-host-runner `/projects/:project/diagnose` endpoint. That agent diagnoses, attempts a
-safe fix (e.g. `docker compose restart`), re-checks, and reports a
-`HEALTH: OK`/`HEALTH: FAIL` verdict. The persistent interactive sessions are never
-touched, so context can't accumulate.
-
-Status is exposed at `http://127.0.0.1:3300/` (text) and `/health` (JSON). Intervals
-and thresholds are env-configurable (`CHECK_INTERVAL_MS`, `EUROTRIP_MAX_AGE_MS`,
-`MIN_CREDITS_USD`, `DIAGNOSE_ON_FAILURE`, `DIAGNOSE_TIMEOUT_MS`, …).
-Start: `health-monitor/start.sh` (tmux session `robot-mill-health`).
-
-## Linear connector
-
-Polls a Linear status column and dispatches issues to agents.
-
-- Config: `~/.envs/robot-mill/linear-connector.env` (`LINEAR_API_KEY`, `LINEAR_TEAM_KEY`,
-  `LINEAR_TRIGGER_STATE`, `HOST_RUNNER_URL`, …).
-- Move an issue into the trigger column (default **"Agent Queue"**, auto-created)
-  and label it with a target host project (e.g. `media-streaming`). The connector
-  moves it to **In Progress**, runs the agent with the issue as its task, comments
-  the result, and moves it to **In Review**.
-- Each issue runs in its own **git worktree** on a branch named after the issue
-  identifier (e.g. `kir-123`), created via the host-runner `/projects/:project/task`
-  endpoint — so ticket work never touches the project's main checkout. The agent is
-  asked to commit, push the branch, and open a pull request; the worktree is removed
-  once the run finishes. Interactive console prompts still run on the main checkout.
-- Start: `linear-connector/start.sh` (tmux session `robot-mill-linear`).
+An `ops`-labelled Linear ticket runs the agent in the project's main checkout
+and expects it to follow that project's own `AGENTS.md` for how to run its
+maintenance/deploy tasks — the connector prompt just points it there and tells
+it not to touch branches or PRs.
 
 ## Local development
 
 ```bash
-# Backend (http://127.0.0.1:3100) — put keys in robot-fastify-backend/.env.local
-cd robot-fastify-backend && bun install && bun run dev
-
-# Telegram frontend (in another shell)
+cd robot-fastify-backend && bun install && bun run dev   # http://127.0.0.1:3100
 cd telegram-frontend && bun install && bun run dev
+cd host-runner && bun install && bun run start            # http://127.0.0.1:3200
+cd linear-connector && bun install && bun run start
+cd health-monitor && bun install && bun run start         # http://127.0.0.1:3300
 ```
 
-Type-check and test the backend:
+Type-check and test:
 
 ```bash
 cd robot-fastify-backend && bun run check && bun test
+cd host-runner && bunx tsc --noEmit
+cd linear-connector && bunx tsc --noEmit
+cd telegram-frontend && bunx tsc --noEmit
+cd health-monitor && bunx tsc --noEmit
 ```
 
 ## Per-project language versions
 
-pi uses `mise`. If a cloned repo has a `.mise.toml` or `.tool-versions`, pi installs
-the right Node / Python / Ruby / Go version when it works on that project.
+pi uses `mise`. If a cloned repo has a `.mise.toml` or `.tool-versions`, pi
+installs the right Node / Python / Ruby / Go version when it works on that
+project.
 
 ## Customising pi
 
 Drop extensions, skills, or prompt templates into the `pi-home` volume
 (`/home/agent/.pi/agent/`) to customise pi across all sessions.
-
-## Security notes
-
-- Set `ALLOWED_CHAT_IDS` to your own Telegram chat ID(s). Empty allows everyone —
-  dev only.
-- The `agent` user has `NOPASSWD` sudo inside the container — treat it as a trusted
-  workload and don't expose its ports publicly.
-- Use Docker secrets or a real secrets manager for API keys in production.
-```
