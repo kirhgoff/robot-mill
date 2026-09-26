@@ -3,6 +3,7 @@ export interface LinearTask {
 	title: string;
 	project: string;
 	mode: "code" | "ops";
+	phase?: "plan" | "execute";
 	key: string;
 	startedAt: number;
 	url: string;

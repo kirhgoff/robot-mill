@@ -74,6 +74,8 @@ export class PiSession extends EventEmitter {
 	private buffer = "";
 	private pendingText = "";
 	private connecting: Promise<void> | null = null;
+	private requestCounter = 0;
+	private pendingRequests = new Map<string, { resolve: () => void; reject: (err: Error) => void }>();
 
 	constructor(project: string, dir: string, config: Config, override: SessionOverride = {}) {
 		super();
@@ -235,7 +237,20 @@ export class PiSession extends EventEmitter {
 			case "extension_ui_request":
 				this.respondExtensionUI(event);
 				break;
+			case "response":
+				this.handleResponse(event);
+				break;
 		}
+	}
+
+	private handleResponse(event: Record<string, unknown>): void {
+		const id = event.id as string | undefined;
+		if (!id) return;
+		const pending = this.pendingRequests.get(id);
+		if (!pending) return;
+		this.pendingRequests.delete(id);
+		if (event.success) pending.resolve();
+		else pending.reject(new Error(`set_model failed: ${event.error}`));
 	}
 
 	private respondExtensionUI(req: Record<string, unknown>): void {
@@ -251,6 +266,27 @@ export class PiSession extends EventEmitter {
 
 	prompt(message: string): void {
 		this.write({ type: "prompt", message });
+	}
+
+	async setModel(provider: string, modelId: string): Promise<void> {
+		const id = `set_model-${++this.requestCounter}`;
+		return new Promise<void>((resolve, reject) => {
+			const timer = setTimeout(() => {
+				this.pendingRequests.delete(id);
+				reject(new Error("set_model timed out"));
+			}, 10_000);
+			this.pendingRequests.set(id, {
+				resolve: () => {
+					clearTimeout(timer);
+					resolve();
+				},
+				reject: (err) => {
+					clearTimeout(timer);
+					reject(err);
+				},
+			});
+			this.write({ type: "set_model", provider, modelId, id });
+		});
 	}
 
 	async runOnce(message: string, timeoutMs: number): Promise<string> {
