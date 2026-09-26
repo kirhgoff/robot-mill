@@ -146,7 +146,7 @@ export class TelegramBot {
 									0,
 									Math.round((Date.now() - t.startedAt) / 60_000),
 								);
-								return `• \`${t.identifier}\` ${t.project} (${t.mode}) — ${t.title} (${age}m ago)`;
+								return `• \`${t.identifier}\` ${t.project} (${t.mode}${t.phase ? `, ${t.phase}` : ""}) — ${t.title} (${age}m ago)`;
 							})
 						: ["  (none)"]),
 				);

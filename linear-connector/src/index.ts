@@ -28,6 +28,8 @@ interface ActiveTask {
 	key: string;
 	name: string;
 	startedAt: number;
+	phase: "plan" | "execute";
+	sentAt: number;
 }
 
 interface TaskStatus {
@@ -115,14 +117,54 @@ async function abortTask(project: string, name: string): Promise<void> {
 	}).catch(() => {});
 }
 
-function promptFor(issue: LinearIssue, mode: "code" | "ops", project: string, name: string): string {
-	const header = `Linear issue ${issue.identifier}: ${issue.title}`;
-	const body = issue.description || "(no description)";
-	const instructions =
+function issueHeader(issue: LinearIssue): string {
+	return `Linear issue ${issue.identifier}: ${issue.title}`;
+}
+
+function issueBody(issue: LinearIssue): string {
+	return issue.description || "(no description)";
+}
+
+function codeLocationLine(project: string, name: string): string {
+	return `You are in a git worktree at ~/robot-mill/worktrees/${project}/${name} on branch \`${name}\` created from origin's default branch.`;
+}
+
+function codeActionInstructions(name: string): string {
+	return `Install dependencies first (bun install / npm ci per lockfile). Implement, commit, \`git push -u origin ${name}\`, then open a PR against the default branch via the GitHub REST API with $GITHUB_TOKEN (\`gh\` is not installed). Finish with a short summary.`;
+}
+
+function opsLocationLine(project: string): string {
+	return `You are in the project's main checkout at ~/Projects/${project} on the host with full access.`;
+}
+
+function opsActionInstructions(): string {
+	return "Follow the project's AGENTS.md runbook. Do not create branches or pull requests. Finish with a short report of what you ran and the outcome.";
+}
+
+function locationLine(mode: "code" | "ops", project: string, name: string): string {
+	return mode === "code" ? codeLocationLine(project, name) : opsLocationLine(project);
+}
+
+function actionInstructions(mode: "code" | "ops", name: string): string {
+	return mode === "code" ? codeActionInstructions(name) : opsActionInstructions();
+}
+
+function execPromptFor(issue: LinearIssue, mode: "code" | "ops", project: string, name: string): string {
+	const instructions = `${locationLine(mode, project, name)} ${actionInstructions(mode, name)}`;
+	return [issueHeader(issue), "", issueBody(issue), "", instructions].join("\n");
+}
+
+function planPromptFor(issue: LinearIssue, mode: "code" | "ops", project: string, name: string): string {
+	const task =
 		mode === "code"
-			? `You are in a git worktree at ~/robot-mill/worktrees/${project}/${name} on branch \`${name}\` created from origin's default branch. Install dependencies first (bun install / npm ci per lockfile). Implement, commit, \`git push -u origin ${name}\`, then open a PR against the default branch via the GitHub REST API with $GITHUB_TOKEN (\`gh\` is not installed). Finish with a short summary.`
-			: `You are in the project's main checkout at ~/Projects/${project} on the host with full access. Follow the project's AGENTS.md runbook. Do not create branches or pull requests. Finish with a short report of what you ran and the outcome.`;
-	return [header, "", body, "", instructions].join("\n");
+			? "This is the PLANNING step. Explore the code and write a concise, concrete implementation plan: files to change, the changes, and how you will verify them. Do not modify files, commit or push yet. End your reply with the plan."
+			: "This is the PLANNING step. Read the project's AGENTS.md runbook and list the exact steps and commands you will run and how you will verify the outcome. Do not run anything that changes state yet. End your reply with the plan.";
+	const instructions = `${locationLine(mode, project, name)} ${task}`;
+	return [issueHeader(issue), "", issueBody(issue), "", instructions].join("\n");
+}
+
+function executeAfterPlanPrompt(mode: "code" | "ops", name: string): string {
+	return `Now execute the plan above. ${actionInstructions(mode, name)}`;
 }
 
 async function dispatch(issue: LinearIssue): Promise<void> {
@@ -154,21 +196,32 @@ async function dispatch(issue: LinearIssue): Promise<void> {
 		return;
 	}
 
+	const phase: "plan" | "execute" = config.planModel ? "plan" : "execute";
+	const message = phase === "plan" ? planPromptFor(issue, mode, target, name) : execPromptFor(issue, mode, target, name);
+	const model = phase === "plan" ? config.planModel : config.execModel || undefined;
+	const sentAt = Date.now();
+
 	try {
 		const res = await fetch(`${config.hostRunnerUrl}/projects/${encodeURIComponent(target)}/task`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ name, message: promptFor(issue, mode, target, name), worktree: mode === "code" }),
+			body: JSON.stringify({
+				name,
+				message,
+				model,
+				provider: config.modelProvider || undefined,
+				worktree: mode === "code",
+			}),
 			signal: AbortSignal.timeout(120000),
 		});
 		if (!res.ok) throw new Error(`host-runner POST /task HTTP ${res.status}`);
 	} catch (err) {
 		const reason = err instanceof Error ? err.message : "host-runner task dispatch failed";
-		await finalize({ issue, project: target, mode, key, name, startedAt: Date.now() }, { success: false, reason });
+		await finalize({ issue, project: target, mode, key, name, startedAt: Date.now(), phase, sentAt }, { success: false, reason });
 		return;
 	}
 
-	active.set(issue.identifier, { issue, project: target, mode, key, name, startedAt: Date.now() });
+	active.set(issue.identifier, { issue, project: target, mode, key, name, startedAt: Date.now(), phase, sentAt });
 	await notify(
 		config.telegramBotToken,
 		config.telegramChatId,
@@ -237,6 +290,43 @@ async function pollOnce(): Promise<void> {
 	}
 }
 
+async function advanceToExecute(task: ActiveTask, planText: string): Promise<void> {
+	try {
+		await linear.comment(task.issue.id, `🧭 Plan (${config.planModel}):\n\n${planText}`);
+	} catch (err) {
+		console.error(`[${task.issue.identifier}] failed to comment plan, retrying next tick:`, err instanceof Error ? err.message : err);
+		return;
+	}
+	await notify(
+		config.telegramBotToken,
+		config.telegramChatId,
+		`🧭 ${task.issue.identifier} plan ready · executing with ${config.execModel || "default model"}`,
+	);
+
+	const sentAt = Date.now();
+	try {
+		const res = await fetch(`${config.hostRunnerUrl}/projects/${encodeURIComponent(task.project)}/task`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				name: task.name,
+				message: executeAfterPlanPrompt(task.mode, task.name),
+				model: config.execModel || undefined,
+				provider: config.modelProvider || undefined,
+				worktree: task.mode === "code",
+			}),
+			signal: AbortSignal.timeout(120000),
+		});
+		if (!res.ok) throw new Error(`host-runner POST /task HTTP ${res.status}`);
+	} catch (err) {
+		const reason = err instanceof Error ? err.message : "host-runner task dispatch failed";
+		await finalize(task, { success: false, reason });
+		return;
+	}
+
+	active.set(task.issue.identifier, { ...task, phase: "execute", sentAt });
+}
+
 async function checkActive(): Promise<void> {
 	for (const task of [...active.values()]) {
 		let status: TaskStatus;
@@ -252,8 +342,19 @@ async function checkActive(): Promise<void> {
 			continue;
 		}
 
-		if (status.endedAt !== null && status.startedAt !== null && status.endedAt > status.startedAt && !status.busy) {
-			await finalize(task, { success: true, lastText: status.lastText ?? "", repo: status.repo });
+		const completed =
+			status.startedAt !== null &&
+			status.startedAt >= task.sentAt &&
+			status.endedAt !== null &&
+			status.endedAt > status.startedAt &&
+			!status.busy;
+
+		if (completed) {
+			if (task.phase === "plan") {
+				await advanceToExecute(task, status.lastText ?? "");
+			} else {
+				await finalize(task, { success: true, lastText: status.lastText ?? "", repo: status.repo });
+			}
 			continue;
 		}
 
@@ -282,8 +383,10 @@ async function recover(): Promise<void> {
 		const name = issue.identifier.toLowerCase();
 		const key = `${target}-${name}`;
 		const startedAt = issue.startedAt ? new Date(issue.startedAt).getTime() : Date.now();
-		active.set(issue.identifier, { issue, project: target, mode, key, name, startedAt });
-		console.log(`[${issue.identifier}] recovered -> ${target} (${mode})`);
+		const phase: "plan" | "execute" =
+			config.planModel && !(await linear.hasCommentStartingWith(issue.id, "🧭 Plan")) ? "plan" : "execute";
+		active.set(issue.identifier, { issue, project: target, mode, key, name, startedAt, phase, sentAt: startedAt });
+		console.log(`[${issue.identifier}] recovered -> ${target} (${mode}, ${phase})`);
 	}
 }
 
@@ -317,6 +420,7 @@ function startServer(): void {
 						title: t.issue.title,
 						project: t.project,
 						mode: t.mode,
+						phase: t.phase,
 						key: t.key,
 						startedAt: t.startedAt,
 						url: t.issue.url,

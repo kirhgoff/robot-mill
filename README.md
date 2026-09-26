@@ -116,6 +116,13 @@ asking for one, then `Agent Failed`.
 6. **On connector restart:** any issue still `In Progress` and labelled `agent`
    is re-tracked from where it left off, rather than abandoned.
 
+**Plan → execute:** when `PLAN_MODEL` is set, step 1 dispatches a planning
+prompt on `PLAN_MODEL` instead of working the ticket directly. Once the plan
+comes back, the connector posts it as a comment, notifies Telegram, and sends
+a follow-up prompt to the *same* session telling it to execute the plan — pi's
+`set_model` switches the session to `EXEC_MODEL` first, keeping the plan in
+context. With `PLAN_MODEL` unset, the flow is single-phase exactly as above.
+
 Notifications (start / success / failure) are pushed directly to Telegram by
 the linear-connector and, separately, by the health-monitor — each holds its
 own bot token + chat id.
@@ -179,6 +186,13 @@ proxies the host-runner, health-monitor and linear-connector.
 | provider key (`ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `OPENAI_API_KEY`) | — | required for the selected `PI_PROVIDER`; per-project override `<KEY>_<PROJECT>`, service override `<KEY>_SERVICE` |
 | `GITHUB_TOKEN` | — | used by ticket agents to open PRs via the GitHub REST API |
 
+`PI_PROVIDER=openai` is a supported setup: set `OPENAI_API_KEY` (per-project
+override `OPENAI_API_KEY_<PROJECT>` works the same as the OpenRouter variant).
+
+`POST /projects/:project/task` also accepts optional `model`/`provider` body
+fields — when `model` is set, the session switches model (keeping its history)
+before the prompt is sent.
+
 ### `linear-connector` (host, tmux, port `3400`)
 
 | Env var | Default | Purpose |
@@ -200,6 +214,9 @@ proxies the host-runner, health-monitor and linear-connector.
 | `LINEAR_CONNECTOR_PORT` | `3400` | its own HTTP API (`/tasks`, `/poll`, `/tickets`, `/tasks/:id/abort`) |
 | `GITHUB_TOKEN` | — | used to look up a ticket's PR by branch |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | optional; notifications off if either is unset |
+| `PLAN_MODEL` | — | when set, dispatch a planning pass with this model before executing |
+| `EXEC_MODEL` | — | model for the execute step (or the only step, if `PLAN_MODEL` is unset) |
+| `MODEL_PROVIDER` | — | provider for `PLAN_MODEL`/`EXEC_MODEL`; empty uses the host-runner's `PI_PROVIDER` |
 
 ### `health-monitor` (host, tmux, port `3300`)
 

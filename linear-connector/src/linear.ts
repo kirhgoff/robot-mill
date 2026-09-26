@@ -191,4 +191,14 @@ export class LinearClient {
 			{ id: issueId, body },
 		);
 	}
+
+	async hasCommentStartingWith(issueId: string, prefix: string): Promise<boolean> {
+		const data = await this.query<{ issue: { comments: { nodes: { body: string }[] } } }>(
+			`query($id: String!) {
+				issue(id: $id) { comments(first: 100) { nodes { body } } }
+			}`,
+			{ id: issueId },
+		);
+		return data.issue.comments.nodes.some((c) => c.body.startsWith(prefix));
+	}
 }

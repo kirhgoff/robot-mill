@@ -17,6 +17,9 @@ export interface Config {
 	githubToken: string;
 	telegramBotToken: string;
 	telegramChatId: string;
+	planModel: string;
+	execModel: string;
+	modelProvider: string;
 }
 
 function env(key: string, fallback = ""): string {
@@ -43,6 +46,9 @@ export function loadConfig(): Config {
 		githubToken: env("GITHUB_TOKEN"),
 		telegramBotToken: env("TELEGRAM_BOT_TOKEN"),
 		telegramChatId: env("TELEGRAM_CHAT_ID"),
+		planModel: env("PLAN_MODEL"),
+		execModel: env("EXEC_MODEL"),
+		modelProvider: env("MODEL_PROVIDER"),
 	};
 }
 

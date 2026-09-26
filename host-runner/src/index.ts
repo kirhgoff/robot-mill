@@ -149,6 +149,8 @@ const server = Bun.serve({
 						const name = body.name as string | undefined;
 						const message = body.message as string | undefined;
 						const worktree = body.worktree === undefined ? true : Boolean(body.worktree);
+						const model = body.model as string | undefined;
+						const provider = body.provider as string | undefined;
 						if (!name || !message) {
 							return json({ error: "name and message are required" }, 400);
 						}
@@ -156,6 +158,9 @@ const server = Bun.serve({
 							return json({ error: "invalid name" }, 400);
 						}
 						const session = await manager.getTask(project, name, worktree);
+						if (model) {
+							await session.setModel(provider || config.piProvider, model);
+						}
 						session.prompt(message);
 						const dir = worktree
 							? join(config.worktreesDir, project, name)
