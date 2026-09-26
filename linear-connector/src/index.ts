@@ -185,11 +185,16 @@ async function dispatch(issue: LinearIssue): Promise<void> {
 	const mode: "code" | "ops" = issue.labels.includes(config.opsLabel) ? "ops" : "code";
 	const name = issue.identifier.toLowerCase();
 	const key = `${target}-${name}`;
+	const modelInfo = [
+		config.planModel && `plan ${config.planModel}`,
+		config.execModel && `exec ${config.execModel}`,
+	].filter(Boolean).join(" → ");
+	const modelSuffix = modelInfo ? ` · ${modelInfo}` : "";
 
 	try {
 		const agentLabelId = await linear.ensureLabel(team.id, config.agentLabel);
 		await linear.addLabel(issue.id, agentLabelId);
-		await linear.comment(issue.id, `🤖 started in \`${target}\` (${mode}) · tmux attach -t pi-${key}`);
+		await linear.comment(issue.id, `🤖 started in \`${target}\` (${mode})${modelSuffix} · tmux attach -t pi-${key}`);
 		await linear.moveIssue(issue.id, states.inProgress);
 	} catch (err) {
 		console.error(`[${issue.identifier}] failed to move to in-progress:`, err instanceof Error ? err.message : err);
@@ -225,7 +230,7 @@ async function dispatch(issue: LinearIssue): Promise<void> {
 	await notify(
 		config.telegramBotToken,
 		config.telegramChatId,
-		`🤖 ${issue.identifier} started · ${target} (${mode}) · tmux attach -t pi-${key}`,
+		`🤖 ${issue.identifier} started · ${target} (${mode})${modelSuffix} · tmux attach -t pi-${key}`,
 	);
 }
 
