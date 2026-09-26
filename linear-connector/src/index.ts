@@ -129,8 +129,8 @@ function codeLocationLine(project: string, name: string): string {
 	return `You are in a git worktree at ~/robot-mill/worktrees/${project}/${name} on branch \`${name}\` created from origin's default branch.`;
 }
 
-function codeActionInstructions(name: string): string {
-	return `Install dependencies first (bun install / npm ci per lockfile). Implement, commit, \`git push -u origin ${name}\`, then open a PR against the default branch via the GitHub REST API with $GITHUB_TOKEN (\`gh\` is not installed). Finish with a short summary.`;
+function codeActionInstructions(issue: LinearIssue, name: string): string {
+	return `Install dependencies first (bun install / npm ci per lockfile). Implement, commit, \`git push -u origin ${name}\`, then open a PR against the default branch via the GitHub REST API with $GITHUB_TOKEN (\`gh\` is not installed). Include this Linear ticket link in the PR description: ${issue.url}. Format the PR title as \`${issue.identifier} <type>: <summary>\`, using a conventional-commit type of feat, fix, refactor, docs, chore, or test. Finish with a short summary.`;
 }
 
 function opsLocationLine(project: string): string {
@@ -145,12 +145,12 @@ function locationLine(mode: "code" | "ops", project: string, name: string): stri
 	return mode === "code" ? codeLocationLine(project, name) : opsLocationLine(project);
 }
 
-function actionInstructions(mode: "code" | "ops", name: string): string {
-	return mode === "code" ? codeActionInstructions(name) : opsActionInstructions();
+function actionInstructions(mode: "code" | "ops", name: string, issue: LinearIssue): string {
+	return mode === "code" ? codeActionInstructions(issue, name) : opsActionInstructions();
 }
 
 function execPromptFor(issue: LinearIssue, mode: "code" | "ops", project: string, name: string): string {
-	const instructions = `${locationLine(mode, project, name)} ${actionInstructions(mode, name)}`;
+	const instructions = `${locationLine(mode, project, name)} ${actionInstructions(mode, name, issue)}`;
 	return [issueHeader(issue), "", issueBody(issue), "", instructions].join("\n");
 }
 
@@ -163,8 +163,8 @@ function planPromptFor(issue: LinearIssue, mode: "code" | "ops", project: string
 	return [issueHeader(issue), "", issueBody(issue), "", instructions].join("\n");
 }
 
-function executeAfterPlanPrompt(mode: "code" | "ops", name: string): string {
-	return `Now execute the plan above. ${actionInstructions(mode, name)}`;
+function executeAfterPlanPrompt(issue: LinearIssue, mode: "code" | "ops", name: string): string {
+	return `Now execute the plan above. ${actionInstructions(mode, name, issue)}`;
 }
 
 async function dispatch(issue: LinearIssue): Promise<void> {
@@ -315,7 +315,7 @@ async function advanceToExecute(task: ActiveTask, planText: string): Promise<voi
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({
 				name: task.name,
-				message: executeAfterPlanPrompt(task.mode, task.name),
+				message: executeAfterPlanPrompt(task.issue, task.mode, task.name),
 				model: config.execModel || undefined,
 				provider: config.modelProvider || undefined,
 				worktree: task.mode === "code",
