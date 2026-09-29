@@ -5,6 +5,7 @@ export async function notify(botToken: string, chatId: string, text: string): Pr
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
+			signal: AbortSignal.timeout(10_000),
 		});
 	} catch {}
 }

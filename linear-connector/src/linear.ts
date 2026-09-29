@@ -46,18 +46,23 @@ export class LinearClient {
 	private apiKey: string;
 	private labelCache = new Map<string, string>();
 
-	constructor(apiKey: string) {
+	constructor(
+		apiKey: string,
+		private endpoint = ENDPOINT,
+		private timeoutMs = 30_000,
+	) {
 		this.apiKey = apiKey;
 	}
 
 	private async query<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-		const res = await fetch(ENDPOINT, {
+		const res = await fetch(this.endpoint, {
 			method: "POST",
 			headers: {
 				Authorization: this.apiKey,
 				"content-type": "application/json",
 			},
 			body: JSON.stringify({ query, variables }),
+			signal: AbortSignal.timeout(this.timeoutMs),
 		});
 		if (!res.ok) throw new Error(`Linear API HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
 		const body = (await res.json()) as { data?: T; errors?: { message: string }[] };

@@ -5,6 +5,7 @@ export async function findPr(repo: string, branch: string, token: string): Promi
 			Authorization: `Bearer ${token}`,
 			"User-Agent": "robot-mill",
 		},
+		signal: AbortSignal.timeout(15_000),
 	});
 	if (!res.ok) return null;
 	const prs = (await res.json()) as { html_url: string }[];
