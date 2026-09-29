@@ -41,6 +41,7 @@ interface TaskStatus {
 	startedAt: number | null;
 	endedAt: number | null;
 	lastText: string | null;
+	error: string | null;
 }
 
 type Outcome =
@@ -355,7 +356,9 @@ async function checkActive(): Promise<void> {
 			!status.busy;
 
 		if (completed) {
-			if (task.phase === "plan") {
+			if (status.error) {
+				await finalize(task, { success: false, reason: `agent error: ${status.error}` });
+			} else if (task.phase === "plan") {
 				await advanceToExecute(task, status.lastText ?? "");
 			} else {
 				await finalize(task, { success: true, lastText: status.lastText ?? "", repo: status.repo });
