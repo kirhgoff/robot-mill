@@ -15,6 +15,7 @@ export interface TaskStatusFields {
 	startedAt: number | null;
 	endedAt: number | null;
 	lastText: string | null;
+	error: string | null;
 }
 
 export interface TaskStatus extends TaskStatusFields {
@@ -221,6 +222,7 @@ export class PiSession extends EventEmitter {
 				break;
 			}
 			case "agent_end": {
+				if (event.willRetry === true) break;
 				const text = this.pendingText.trim();
 				this.emit("message_complete", text);
 				this.emitOutput("message_complete", text);
@@ -449,6 +451,7 @@ export class PiSessionManager extends EventEmitter {
 			startedAt: null,
 			endedAt: null,
 			lastText: null,
+			error: null,
 		};
 		return { key, running: hasSession(key), dir, repo: this.repoSlug(project), ...status };
 	}
