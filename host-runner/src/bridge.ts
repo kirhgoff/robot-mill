@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createServer, type Socket } from "node:net";
 import { existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { applyPiEvent, initialBridgeState } from "./bridge-status";
 
 function arg(name: string): string | undefined {
 	const i = process.argv.indexOf(`--${name}`);
@@ -27,15 +28,11 @@ mkdirSync(dirname(session), { recursive: true });
 mkdirSync(dirname(statusPath), { recursive: true });
 if (existsSync(socketPath)) unlinkSync(socketPath);
 
-let busy = false;
-let startedAt: number | null = null;
-let endedAt: number | null = null;
-let lastText: string | null = null;
-let pendingText = "";
+const state = initialBridgeState();
 
 function writeStatus(): void {
 	const tmp = `${statusPath}.tmp`;
-	writeFileSync(tmp, JSON.stringify({ busy, startedAt, endedAt, lastText }));
+	writeFileSync(tmp, JSON.stringify(state.status));
 	renameSync(tmp, statusPath);
 }
 
@@ -43,34 +40,7 @@ function updateStatus(chunk: string): void {
 	for (const line of chunk.split("\n")) {
 		if (!line.trim()) continue;
 		try {
-			const event = JSON.parse(line);
-			if (event.type === "agent_start") {
-				busy = true;
-				startedAt = Date.now();
-				endedAt = null;
-				lastText = null;
-				pendingText = "";
-				writeStatus();
-			} else if (event.type === "message_update") {
-				const mev = event.assistantMessageEvent;
-				if (mev?.type === "text_delta") pendingText += mev.delta;
-			} else if (event.type === "message_end") {
-				const message = event.message;
-				if (
-					message?.role === "assistant" &&
-					message.stopReason === "error" &&
-					typeof message.errorMessage === "string" &&
-					message.errorMessage.trim()
-				) {
-					pendingText = `agent error: ${message.errorMessage}`;
-				}
-			} else if (event.type === "agent_end") {
-				busy = false;
-				endedAt = Date.now();
-				lastText = pendingText.trim();
-				pendingText = "";
-				writeStatus();
-			}
+			if (applyPiEvent(state, JSON.parse(line))) writeStatus();
 		} catch {
 			// malformed line
 		}
