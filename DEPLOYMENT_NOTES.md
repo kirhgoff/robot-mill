@@ -117,7 +117,7 @@ and are removed by the connector once a ticket finalizes.
 2. Get your chat id (`@userinfobot`) and set `ALLOWED_CHAT_IDS` in `.env`
    (empty allows everyone — dev only) and `TELEGRAM_CHAT_ID` wherever a
    component should notify.
-3. Paste the command list from `README.md`'s "Register with BotFather"
+3. Paste the command list from `README.md`'s "BotFather command list"
    section into `/setcommands`.
 4. Deploy with the `telegram` profile enabled: `./scripts/deploy-remote.fish --telegram`.
 
