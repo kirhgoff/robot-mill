@@ -115,11 +115,64 @@ export interface ProviderVerdict extends Verdict {
 }
 
 export async function providerCheck(
+	provider: string,
+	key: string,
+	piModel: string,
+	planModel: string,
+	execModel: string,
+	minCreditsUsd: number,
+): Promise<ProviderVerdict> {
+	if (!key) return { status: "unknown", detail: `no ${provider} provider key configured` };
+	if (provider === "openai") return openAiProviderCheck(key, planModel, execModel);
+	if (provider === "openrouter") return openRouterProviderCheck(key, piModel, minCreditsUsd);
+	return { status: "unknown", detail: `provider check not supported for ${provider}` };
+}
+
+async function openAiProviderCheck(
+	key: string,
+	planModel: string,
+	execModel: string,
+): Promise<ProviderVerdict> {
+	const models = [...new Set([planModel, execModel].filter(Boolean))];
+	if (!planModel || !execModel) {
+		const missing = [!planModel && "PLAN_MODEL", !execModel && "EXEC_MODEL"].filter(Boolean);
+		return { status: "unknown", detail: `missing ${missing.join(" and ")}` };
+	}
+	try {
+		const headers = { authorization: `Bearer ${key}` };
+		const keyRes = await fetch("https://api.openai.com/v1/models", {
+			headers,
+			signal: AbortSignal.timeout(10000),
+		});
+		if (!keyRes.ok) return { status: "fail", detail: `OpenAI key check returned ${keyRes.status}` };
+
+		const checks = await Promise.all(models.map(async (model) => {
+			const res = await fetch(`https://api.openai.com/v1/models/${encodeURIComponent(model)}`, {
+				headers,
+				signal: AbortSignal.timeout(10000),
+			});
+			return { model, status: res.status };
+		}));
+		const missing = checks.filter((check) => check.status === 404).map((check) => check.model);
+		const failures = checks.filter((check) => check.status !== 200 && check.status !== 404);
+		if (failures.length) {
+			return {
+				status: "fail",
+				detail: failures.map(({ model, status }) => `${model} check returned ${status}`).join("; "),
+			};
+		}
+		if (missing.length) return { status: "fail", detail: `OpenAI model(s) not found: ${missing.join(", ")}` };
+		return { status: "ok", detail: `OpenAI key valid; models available: ${models.join(", ")}` };
+	} catch (err) {
+		return { status: "error", detail: err instanceof Error ? err.message : "OpenAI check failed" };
+	}
+}
+
+async function openRouterProviderCheck(
 	key: string,
 	model: string,
 	minCreditsUsd: number,
 ): Promise<ProviderVerdict> {
-	if (!key) return { status: "unknown", detail: "no provider key configured" };
 	try {
 		const creditsRes = await fetch("https://openrouter.ai/api/v1/credits", {
 			headers: { authorization: `Bearer ${key}` },
@@ -134,10 +187,8 @@ export async function providerCheck(
 		const total = Number(body.data?.total_credits ?? 0);
 		const usage = Number(body.data?.total_usage ?? 0);
 		const remaining = total - usage;
-
-		const modelNote = await modelAvailability(key, model);
+		const modelNote = await openRouterModelAvailability(key, model);
 		const balance = `$${remaining.toFixed(2)} left ($${usage.toFixed(2)}/$${total.toFixed(2)} used)`;
-
 		if (remaining < minCreditsUsd) {
 			return {
 				status: "fail",
@@ -153,7 +204,7 @@ export async function providerCheck(
 	}
 }
 
-async function modelAvailability(key: string, model: string): Promise<string> {
+async function openRouterModelAvailability(key: string, model: string): Promise<string> {
 	if (!model) return "no PI_MODEL set";
 	try {
 		const res = await fetch("https://openrouter.ai/api/v1/models", {

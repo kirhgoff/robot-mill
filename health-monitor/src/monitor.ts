@@ -15,8 +15,6 @@ export interface CheckResult {
 	durationMs: number;
 }
 
-const PROVIDER_CHECK = "openrouter";
-
 export class Monitor {
 	private config: Config;
 	private results = new Map<string, CheckResult>();
@@ -26,8 +24,12 @@ export class Monitor {
 		this.config = config;
 	}
 
+	private providerCheckName(): string {
+		return this.config.piProvider;
+	}
+
 	private knownChecks(): string[] {
-		return [...this.config.serviceProjects, PROVIDER_CHECK];
+		return [...this.config.serviceProjects, this.providerCheckName()];
 	}
 
 	private seedInitial(): void {
@@ -143,11 +145,14 @@ export class Monitor {
 	private async runProviderCheck(): Promise<void> {
 		const startedAt = Date.now();
 		const verdict = await providerCheck(
+			this.config.piProvider,
 			this.config.providerKey,
 			this.config.piModel,
+			this.config.planModel,
+			this.config.execModel,
 			this.config.minCreditsUsd,
 		);
-		this.record(PROVIDER_CHECK, verdict.status, verdict.detail, startedAt);
+		this.record(this.providerCheckName(), verdict.status, verdict.detail, startedAt);
 	}
 }
 

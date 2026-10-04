@@ -32,8 +32,8 @@ components each read their own env file:
 
 `host-runner.env` and `linear-connector.env` are required (their `start-host.sh`
 invocation refuses to start without one); `health-monitor.env` is optional —
-without it the `openrouter` check degrades to `unknown` and Telegram
-notifications stay off.
+without it the provider check degrades to `unknown` and Telegram notifications
+stay off.
 
 ## Redeploy
 
@@ -76,8 +76,11 @@ and are removed by the connector once a ticket finalizes.
 - Current: `PI_PROVIDER=openai`, `PI_MODEL=gpt-6-luna` with `OPENAI_API_KEY`
   (host-runner.env and compose `.env`). Linear tickets plan on
   `PLAN_MODEL=gpt-6-sol` and execute on `EXEC_MODEL=gpt-6-luna`
-  (linear-connector.env). `pi` inherits its container/host process's env, so
-  any key added there reaches the agent.
+  (linear-connector.env). Copy both model IDs and the selected provider's key
+  (e.g. `OPENAI_API_KEY_SERVICE`) into `health-monitor.env`; the monitor checks
+  the key and verifies both model IDs through OpenAI's models endpoint. `pi`
+  inherits its container/host process's env, so any key added there reaches the
+  agent.
 - Previously `PI_PROVIDER=openrouter` with `PI_MODEL=anthropic/claude-opus-4.8`.
 - Per-key cost attribution: any unset key falls back to the shared
   `OPENROUTER_API_KEY` (or the `ANTHROPIC_`/`OPENAI_` equivalent), so nothing
@@ -88,9 +91,11 @@ and are removed by the connector once a ticket finalizes.
     interactive `/project` and Linear tasks), named by uppercased repo with
     non-alphanumerics as `_` (e.g. `media-streaming` →
     `OPENROUTER_API_KEY_MEDIA_STREAMING`) → `host-runner.env`.
-  - `OPENROUTER_API_KEY_SERVICE` — the low-cost diagnose model
-    (`SERVICE_PI_MODEL`, default `anthropic/claude-haiku-4.5`) → both
-    `host-runner.env` and `health-monitor.env`.
+  - `OPENROUTER_API_KEY_SERVICE` (or the matching `ANTHROPIC_API_KEY_SERVICE`
+    / `OPENAI_API_KEY_SERVICE`) — the low-cost diagnose model
+    (`SERVICE_PI_MODEL`, default `anthropic/claude-haiku-4.5`) →
+    `host-runner.env` and `health-monitor.env`. The health-monitor's provider
+    check uses the service key for the selected `PI_PROVIDER`.
 
 ## Linear setup
 
