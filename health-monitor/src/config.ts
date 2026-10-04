@@ -9,9 +9,12 @@ export interface Config {
 	checkTimeoutMs: number;
 	diagnoseOnFailure: boolean;
 	diagnoseTimeoutMs: number;
+	piProvider: string;
 	providerKeyEnv: string;
 	providerKey: string;
 	piModel: string;
+	planModel: string;
+	execModel: string;
 	minCreditsUsd: number;
 	telegramBotToken: string;
 	telegramChatId: string;
@@ -49,9 +52,12 @@ export function loadConfig(): Config {
 		checkTimeoutMs: Number(env("CHECK_TIMEOUT_MS", String(2 * 60 * 1000))),
 		diagnoseOnFailure: env("DIAGNOSE_ON_FAILURE", "true") !== "false",
 		diagnoseTimeoutMs: Number(env("DIAGNOSE_TIMEOUT_MS", String(5 * 60 * 1000))),
+		piProvider: provider,
 		providerKeyEnv: key.env,
 		providerKey: key.value,
 		piModel: env("PI_MODEL"),
+		planModel: env("PLAN_MODEL"),
+		execModel: env("EXEC_MODEL"),
 		minCreditsUsd: Number(env("MIN_CREDITS_USD", "10")),
 		telegramBotToken: env("TELEGRAM_BOT_TOKEN"),
 		telegramChatId: env("TELEGRAM_CHAT_ID"),

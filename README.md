@@ -72,7 +72,7 @@ can `tmux attach -t pi-<key>` and watch or steer any of them yourself.
 |---|---|---|
 | **host-runner** | host, tmux | Owns every pi agent. Starts one per key in its own tmux session (`pi-<project>` for chats, `pi-<project>-<issue>` for tickets), creates git worktrees for code tickets, and exposes an HTTP + WebSocket API to send prompts and stream output. |
 | **linear-connector** | host, tmux | The way autonomous work comes in. Polls Linear for queued tickets, works out the target repo, dispatches the task to the host-runner, tracks it until it finishes, then updates the ticket and sends a Telegram notification. |
-| **health-monitor** | host, tmux | Runs deterministic health checks on your self-hosted projects every day (their `scripts/health-check.sh` or `docker compose ps`, plus your OpenRouter balance). When a check fails, it starts one diagnosis run on a cheap model that tries a safe fix. |
+| **health-monitor** | host, tmux | Runs deterministic health checks on your self-hosted projects every day (their `scripts/health-check.sh` or `docker compose ps`, plus a check of the `PI_PROVIDER` key: OpenRouter balance, or that the OpenAI `PLAN_MODEL`/`EXEC_MODEL` exist). When a check fails, it starts one diagnosis run on a cheap model that tries a safe fix. |
 | **telegram-frontend** | container | The Telegram bot. Sends chat messages to a project's agent, files Linear tickets, and lists running agents. |
 | **robot-fastify-backend** | container | Serves the web console and homepage, pulling status from the three host components. It also contains an experimental "variations" feature that stays off unless `VARIATIONS_ENABLED=true` (UI in `web-variations-frontend`). |
 
@@ -222,6 +222,7 @@ TELEGRAM_CHAT_ID=123456789
 ```sh
 SERVICE_PROJECTS=media-streaming,nightcrawler
 OPENROUTER_API_KEY=sk-or-...           # balance check + diagnosis model
+# PI_PROVIDER=openai  OPENAI_API_KEY=...  PLAN_MODEL=...  EXEC_MODEL=...  # OpenAI: key + model check
 TELEGRAM_BOT_TOKEN=123456:ABC...
 TELEGRAM_CHAT_ID=123456789
 ```
