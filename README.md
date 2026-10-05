@@ -111,8 +111,8 @@ sequenceDiagram
 ```
 
 - **Which repo?** The ticket's Linear project name, or one of its labels, must
-  match a directory in `~/Projects` (limited by the host-runner's
-  `ALLOWED_PROJECTS`). If nothing matches, the ticket is moved to
+  match a directory in `~/Projects` whose `origin` is a GitHub repo owned by
+  the host-runner's `GITHUB_OWNER`. If nothing matches, the ticket is moved to
   **Agent Failed** with a comment saying so.
 - **Code tickets** run in a fresh worktree off the default branch and end in a
   PR, which moves the ticket to **In Review**.
@@ -203,7 +203,7 @@ PI_PROVIDER=openrouter                 # openrouter | anthropic | openai
 PI_MODEL=anthropic/claude-opus-4.8     # bare id for openai, e.g. gpt-6-luna
 OPENROUTER_API_KEY=sk-or-...           # key matching PI_PROVIDER
 GITHUB_TOKEN=github_pat_...
-ALLOWED_PROJECTS=nightcrawler,robot-mill   # optional; default = anything in ~/Projects
+GITHUB_OWNER=your-github-login         # only checkouts with an origin under this account run
 ```
 
 **`~/.envs/robot-mill/linear-connector.env`** (required): ticket intake.

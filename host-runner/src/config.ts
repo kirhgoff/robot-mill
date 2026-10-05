@@ -7,7 +7,7 @@ export interface Config {
 	stateDir: string;
 	worktreesDir: string;
 	sessionMaxAgeMs: number;
-	allowedProjects: string[];
+	githubOwner: string;
 	piProvider: string;
 	piModel: string;
 	providerKeyEnv: string;
@@ -51,10 +51,7 @@ export function loadConfig(): Config {
 		stateDir: env("STATE_DIR", resolve(env("HOME"), "robot-mill/host-runner")),
 		worktreesDir: env("WORKTREES_DIR", resolve(env("HOME"), "robot-mill/worktrees")),
 		sessionMaxAgeMs: Number(env("SESSION_MAX_AGE_MS", String(24 * 60 * 60 * 1000))),
-		allowedProjects: env("ALLOWED_PROJECTS")
-			.split(",")
-			.map((s) => s.trim())
-			.filter(Boolean),
+		githubOwner: env("GITHUB_OWNER"),
 		piProvider,
 		piModel: env("PI_MODEL"),
 		providerKeyEnv,
@@ -78,6 +75,9 @@ export function validateConfig(config: Config): string[] {
 		errors.push(
 			`${config.providerKeyEnv} is required (shared fallback for per-project ${config.providerKeyEnv}_<PROJECT> keys) for PI_PROVIDER=${config.piProvider}`,
 		);
+	}
+	if (!config.githubOwner) {
+		errors.push("GITHUB_OWNER is required: only checkouts whose origin is one of their GitHub repos are allowed");
 	}
 	if (!config.port || config.port < 1 || config.port > 65535) {
 		errors.push(`HOST_RUNNER_PORT must be 1–65535, got ${config.port}`);

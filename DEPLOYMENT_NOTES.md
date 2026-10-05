@@ -105,8 +105,8 @@ and are removed by the connector once a ticket finalizes.
    auto-created on first connect if missing. `In Progress`/`In Review`/`Done`
    must already exist in the team's workflow.
 3. Label a project (or add a project-matching Linear project name) with a
-   name from `host-runner`'s `ALLOWED_PROJECTS` so the connector can resolve a
-   target repo. Add the `ops` label to a ticket to run it as a runbook/deploy
+   directory name under `~/Projects` whose `origin` is a `GITHUB_OWNER` repo
+   (host-runner) so the connector can resolve a target repo. Add the `ops` label to a ticket to run it as a runbook/deploy
    task instead of a code change.
 4. `GITHUB_TOKEN` in `linear-connector.env` is used to look up a ticket's PR by
    branch; the same token (in `host-runner.env`) is what the agent itself uses
