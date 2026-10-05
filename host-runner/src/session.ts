@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { connect, type Socket } from "node:net";
-import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { type Config, projectKeyValue } from "./config";
 import { hasSession, killSession, newSession } from "./tmux";
@@ -9,6 +9,13 @@ import { ensureWorktree, removeWorktree, taskId } from "./worktree";
 
 const bunPath = process.execPath;
 const bridgePath = join(import.meta.dir, "bridge.ts");
+
+export function isOwnedBy(dir: string, owner: string): boolean {
+	if (!existsSync(join(dir, ".git"))) return false;
+	const res = spawnSync("git", ["-C", dir, "remote", "get-url", "origin"], { encoding: "utf-8" });
+	const match = res.stdout.trim().match(/github\.com[:/]([^/]+)\//i);
+	return match?.[1]?.toLowerCase() === owner.toLowerCase();
+}
 
 export interface TaskStatusFields {
 	busy: boolean | null;
@@ -401,14 +408,11 @@ export class PiSessionManager extends EventEmitter {
 
 	isAllowed(project: string): boolean {
 		if (!/^[A-Za-z0-9._-]+$/.test(project)) return false;
-		if (this.config.allowedProjects.length > 0) {
-			return this.config.allowedProjects.includes(project);
-		}
-		return existsSync(join(this.config.projectsDir, project));
+		return isOwnedBy(join(this.config.projectsDir, project), this.config.githubOwner);
 	}
 
 	listProjects(): string[] {
-		return this.config.allowedProjects;
+		return readdirSync(this.config.projectsDir).filter((project) => this.isAllowed(project));
 	}
 
 	async get(project: string): Promise<PiSession> {

@@ -224,4 +224,4 @@ const server = Bun.serve({
 
 console.log(`host-runner listening on http://${config.host}:${server.port}`);
 console.log(`  projects dir: ${config.projectsDir}`);
-console.log(`  allowed: ${config.allowedProjects.join(", ") || "(any under projects dir)"}`);
+console.log(`  allowed: checkouts with a github.com/${config.githubOwner} origin`);
