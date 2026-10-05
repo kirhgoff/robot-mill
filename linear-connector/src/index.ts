@@ -71,15 +71,22 @@ async function readBody(req: Request): Promise<Record<string, unknown>> {
 	}
 }
 
+async function fetchAllowedProjects(): Promise<string[] | undefined> {
+	try {
+		const res = await fetch(`${config.hostRunnerUrl}/projects`, { signal: AbortSignal.timeout(5000) });
+		if (res.ok) return ((await res.json()) as { allowed: string[] }).allowed;
+	} catch {}
+	return undefined;
+}
+
+async function refreshAllowedProjects(): Promise<void> {
+	allowedProjects = (await fetchAllowedProjects()) ?? allowedProjects;
+}
+
 async function waitForHostRunner(): Promise<string[]> {
 	for (;;) {
-		try {
-			const res = await fetch(`${config.hostRunnerUrl}/projects`, { signal: AbortSignal.timeout(5000) });
-			if (res.ok) {
-				const body = (await res.json()) as { allowed: string[] };
-				return body.allowed;
-			}
-		} catch {}
+		const allowed = await fetchAllowedProjects();
+		if (allowed) return allowed;
 		console.log(`waiting for host-runner at ${config.hostRunnerUrl}...`);
 		await new Promise((resolve) => setTimeout(resolve, 10000));
 	}
@@ -289,6 +296,7 @@ async function pollOnce(): Promise<void> {
 		return;
 	}
 
+	await refreshAllowedProjects();
 	for (const issue of issues) {
 		if (active.size >= config.maxConcurrentTasks) break;
 		if (active.has(issue.identifier)) continue;
@@ -446,6 +454,7 @@ function startServer(): void {
 				const body = await readBody(req);
 				const project = body.project as string | undefined;
 				const title = body.title as string | undefined;
+				await refreshAllowedProjects();
 				if (!project || !allowedProjects.includes(project)) {
 					return json({ error: `project not allowed: ${project}` }, 400);
 				}
