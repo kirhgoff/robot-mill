@@ -1,6 +1,14 @@
 import { loadConfig, validateConfig } from "./config";
 import { findPr } from "./github";
 import { LinearClient, type LinearIssue, type TeamInfo } from "./linear";
+import {
+	nearLimit,
+	nearLimitComment,
+	type RateLimits,
+	rateLimitComment,
+	runInfoComment,
+	WARN_INTERVAL_MS,
+} from "./ratelimit";
 import { notify } from "./telegram";
 
 const config = loadConfig();
@@ -30,6 +38,16 @@ interface ActiveTask {
 	startedAt: number;
 	phase: "plan" | "execute";
 	sentAt: number;
+	lastWarnAt: number;
+	rateLimitSeenAt: number;
+}
+
+interface TaskStarted {
+	key: string;
+	dir: string;
+	provider: string;
+	model: string;
+	piVersion: string;
 }
 
 interface TaskStatus {
@@ -42,6 +60,8 @@ interface TaskStatus {
 	endedAt: number | null;
 	lastText: string | null;
 	error: string | null;
+	rateLimitError: string | null;
+	rateLimitedAt: number | null;
 }
 
 type Outcome =
@@ -202,7 +222,6 @@ async function dispatch(issue: LinearIssue): Promise<void> {
 	try {
 		const agentLabelId = await linear.ensureLabel(team.id, config.agentLabel);
 		await linear.addLabel(issue.id, agentLabelId);
-		await linear.comment(issue.id, `🤖 started in \`${target}\` (${mode})${modelSuffix} · tmux attach -t pi-${key}`);
 		await linear.moveIssue(issue.id, states.inProgress);
 	} catch (err) {
 		console.error(`[${issue.identifier}] failed to move to in-progress:`, err instanceof Error ? err.message : err);
@@ -211,8 +230,8 @@ async function dispatch(issue: LinearIssue): Promise<void> {
 
 	const phase: "plan" | "execute" = config.planModel ? "plan" : "execute";
 	const message = phase === "plan" ? planPromptFor(issue, mode, target, name) : execPromptFor(issue, mode, target, name);
-	const model = phase === "plan" ? config.planModel : config.execModel || undefined;
 	const sentAt = Date.now();
+	let started: TaskStarted;
 
 	try {
 		const res = await fetch(`${config.hostRunnerUrl}/projects/${encodeURIComponent(target)}/task`, {
@@ -221,20 +240,26 @@ async function dispatch(issue: LinearIssue): Promise<void> {
 			body: JSON.stringify({
 				name,
 				message,
-				model,
+				model: phaseModel(phase),
 				provider: config.modelProvider || undefined,
 				worktree: mode === "code",
 			}),
 			signal: AbortSignal.timeout(120000),
 		});
 		if (!res.ok) throw new Error(`host-runner POST /task HTTP ${res.status}`);
+		started = await res.json();
 	} catch (err) {
 		const reason = err instanceof Error ? err.message : "host-runner task dispatch failed";
-		await finalize({ issue, project: target, mode, key, name, startedAt: Date.now(), phase, sentAt }, { success: false, reason });
+		await finalize(
+			{ issue, project: target, mode, key, name, startedAt: Date.now(), phase, sentAt, lastWarnAt: 0, rateLimitSeenAt: Date.now() },
+			{ success: false, reason },
+		);
 		return;
 	}
 
-	active.set(issue.identifier, { issue, project: target, mode, key, name, startedAt: Date.now(), phase, sentAt });
+	const task: ActiveTask = { issue, project: target, mode, key, name, startedAt: Date.now(), phase, sentAt, lastWarnAt: 0, rateLimitSeenAt: Date.now() };
+	active.set(issue.identifier, task);
+	await postRunInfo(task, started);
 	await notify(
 		config.telegramBotToken,
 		config.telegramChatId,
@@ -304,6 +329,63 @@ async function pollOnce(): Promise<void> {
 	}
 }
 
+function phaseModel(phase: "plan" | "execute"): string | undefined {
+	return phase === "plan" ? config.planModel : config.execModel || undefined;
+}
+
+async function getRateLimits(project: string, model?: string): Promise<RateLimits> {
+	const params = new URLSearchParams();
+	if (model) params.set("model", model);
+	if (config.modelProvider) params.set("provider", config.modelProvider);
+	const res = await fetch(`${config.hostRunnerUrl}/projects/${encodeURIComponent(project)}/ratelimit?${params}`, {
+		signal: AbortSignal.timeout(10000),
+	});
+	if (!res.ok) throw new Error(`host-runner GET /ratelimit HTTP ${res.status}`);
+	return res.json();
+}
+
+async function postRunInfo(task: ActiveTask, started: TaskStarted): Promise<void> {
+	try {
+		const limits = await getRateLimits(task.project, phaseModel(task.phase)).catch(() => null);
+		await linear.comment(
+			task.issue.id,
+			runInfoComment({
+				phase: task.phase,
+				project: task.project,
+				mode: task.mode,
+				key: task.key,
+				name: task.name,
+				dir: started.dir,
+				provider: started.provider,
+				model: started.model,
+				piVersion: started.piVersion,
+				limits,
+			}),
+		);
+	} catch (err) {
+		console.error(`[${task.issue.identifier}] run info comment failed:`, err instanceof Error ? err.message : err);
+	}
+}
+
+async function warnRateLimits(task: ActiveTask, status: TaskStatus): Promise<void> {
+	const fresh = status.rateLimitedAt !== null && status.rateLimitedAt > task.rateLimitSeenAt;
+	if (fresh) task.rateLimitSeenAt = status.rateLimitedAt as number;
+	if (Date.now() - task.lastWarnAt < WARN_INTERVAL_MS) return;
+	let body: string | null = null;
+	if (fresh) body = rateLimitComment(status.rateLimitError ?? "rate limit");
+	else {
+		const limits = await getRateLimits(task.project, phaseModel(task.phase)).catch(() => null);
+		if (limits && nearLimit(limits)) body = nearLimitComment(limits);
+	}
+	if (!body) return;
+	try {
+		await linear.comment(task.issue.id, body);
+		task.lastWarnAt = Date.now();
+	} catch (err) {
+		console.error(`[${task.issue.identifier}] rate-limit warning failed:`, err instanceof Error ? err.message : err);
+	}
+}
+
 async function advanceToExecute(task: ActiveTask, planText: string): Promise<void> {
 	try {
 		await linear.comment(task.issue.id, `🧭 Plan (${config.planModel}):\n\n${planText}`);
@@ -318,6 +400,7 @@ async function advanceToExecute(task: ActiveTask, planText: string): Promise<voi
 	);
 
 	const sentAt = Date.now();
+	let started: TaskStarted;
 	try {
 		const res = await fetch(`${config.hostRunnerUrl}/projects/${encodeURIComponent(task.project)}/task`, {
 			method: "POST",
@@ -325,20 +408,23 @@ async function advanceToExecute(task: ActiveTask, planText: string): Promise<voi
 			body: JSON.stringify({
 				name: task.name,
 				message: executeAfterPlanPrompt(task.issue, task.mode, task.name),
-				model: config.execModel || undefined,
+				model: phaseModel("execute"),
 				provider: config.modelProvider || undefined,
 				worktree: task.mode === "code",
 			}),
 			signal: AbortSignal.timeout(120000),
 		});
 		if (!res.ok) throw new Error(`host-runner POST /task HTTP ${res.status}`);
+		started = await res.json();
 	} catch (err) {
 		const reason = err instanceof Error ? err.message : "host-runner task dispatch failed";
 		await finalize(task, { success: false, reason });
 		return;
 	}
 
-	active.set(task.issue.identifier, { ...task, phase: "execute", sentAt });
+	const next: ActiveTask = { ...task, phase: "execute", sentAt };
+	active.set(task.issue.identifier, next);
+	await postRunInfo(next, started);
 }
 
 async function checkActive(): Promise<void> {
@@ -374,6 +460,8 @@ async function checkActive(): Promise<void> {
 			continue;
 		}
 
+		await warnRateLimits(task, status);
+
 		if (Date.now() - task.startedAt > config.taskTimeoutMs) {
 			await abortTask(task.project, task.name);
 			await finalize(task, {
@@ -401,7 +489,7 @@ async function recover(): Promise<void> {
 		const startedAt = issue.startedAt ? new Date(issue.startedAt).getTime() : Date.now();
 		const phase: "plan" | "execute" =
 			config.planModel && !(await linear.hasCommentStartingWith(issue.id, "🧭 Plan")) ? "plan" : "execute";
-		active.set(issue.identifier, { issue, project: target, mode, key, name, startedAt, phase, sentAt: startedAt });
+		active.set(issue.identifier, { issue, project: target, mode, key, name, startedAt, phase, sentAt: startedAt, lastWarnAt: 0, rateLimitSeenAt: Date.now() });
 		console.log(`[${issue.identifier}] recovered -> ${target} (${mode}, ${phase})`);
 	}
 }
