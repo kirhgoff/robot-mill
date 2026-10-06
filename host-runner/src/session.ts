@@ -23,6 +23,8 @@ export interface TaskStatusFields {
 	endedAt: number | null;
 	lastText: string | null;
 	error: string | null;
+	rateLimitError: string | null;
+	rateLimitedAt: number | null;
 }
 
 export interface TaskStatus extends TaskStatusFields {
@@ -456,6 +458,8 @@ export class PiSessionManager extends EventEmitter {
 			endedAt: null,
 			lastText: null,
 			error: null,
+			rateLimitError: null,
+			rateLimitedAt: null,
 		};
 		return { key, running: hasSession(key), dir, repo: this.repoSlug(project), ...status };
 	}

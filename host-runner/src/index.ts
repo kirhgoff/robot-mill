@@ -2,7 +2,8 @@ import type { ServerWebSocket } from "bun";
 import { spawnSync } from "node:child_process";
 import { freemem, totalmem } from "node:os";
 import { join } from "node:path";
-import { loadConfig, validateConfig } from "./config";
+import { loadConfig, projectKeyValue, validateConfig } from "./config";
+import { rateLimits } from "./ratelimit";
 import { PiSessionManager, type SessionOutput } from "./session";
 import { listSessions } from "./tmux";
 import { taskId } from "./worktree";
@@ -19,6 +20,12 @@ function diskStats(path: string): { free: number; total: number } {
 	const line = (res.stdout || "").trim().split("\n")[1] || "";
 	const cols = line.split(/\s+/);
 	return { total: (Number(cols[1]) || 0) * 1024, free: (Number(cols[3]) || 0) * 1024 };
+}
+
+let cachedPiVersion: string | undefined;
+function piVersion(): string {
+	cachedPiVersion ??= spawnSync("pi", ["--version"], { encoding: "utf-8" }).stdout?.trim() || "unknown";
+	return cachedPiVersion;
 }
 
 function systemStats() {
@@ -165,12 +172,25 @@ const server = Bun.serve({
 						const dir = worktree
 							? join(config.worktreesDir, project, name)
 							: join(config.projectsDir, project);
-						return json({ ok: true, key: taskId(project, name), dir });
+						return json({
+							ok: true,
+							key: taskId(project, name),
+							dir,
+							provider: provider || config.piProvider,
+							model: model || config.piModel,
+							piVersion: piVersion(),
+						});
 					}
 					if (req.method === "GET" && action === "/task") {
 						const name = url.searchParams.get("name");
 						if (!name) return json({ error: "name is required" }, 400);
 						return json(await manager.taskStatus(project, name));
+					}
+					if (req.method === "GET" && action === "/ratelimit") {
+						const provider = url.searchParams.get("provider") || config.piProvider;
+						const model = url.searchParams.get("model") || config.piModel;
+						const key = provider === config.piProvider ? projectKeyValue(config, project) : "";
+						return json(await rateLimits(provider, model, key));
 					}
 					if (req.method === "DELETE" && action === "/task") {
 						const body = await readBody(req);

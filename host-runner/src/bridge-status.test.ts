@@ -43,3 +43,24 @@ test("piArgs passes provider only together with model", () => {
 		"--mode", "rpc", "--session", "s", "--provider", "openai", "--model", "gpt-6-luna", "-c",
 	]);
 });
+
+test("rate limit errors are recorded and survive the next agent_start", () => {
+	const state = initialBridgeState();
+	applyPiEvent(state, { type: "agent_start" });
+	expect(applyPiEvent(state, rateLimited)).toBe(true);
+	expect(state.status.rateLimitError).toBe("429 rate limit");
+	expect(state.status.rateLimitedAt).not.toBeNull();
+	applyPiEvent(state, { type: "agent_start" });
+	expect(state.status.rateLimitError).toBe("429 rate limit");
+	expect(state.status.rateLimitedAt).not.toBeNull();
+});
+
+test("other errors do not set rateLimitError", () => {
+	const state = initialBridgeState();
+	applyPiEvent(state, { type: "agent_start" });
+	applyPiEvent(state, {
+		type: "message_end",
+		message: { role: "assistant", stopReason: "error", errorMessage: "401: bad key" },
+	});
+	expect(state.status.rateLimitError).toBeNull();
+});
