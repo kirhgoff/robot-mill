@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { applyPiEvent, initialBridgeState } from "./bridge-status";
+import { applyPiEvent, initialBridgeState, piArgs } from "./bridge-status";
 
 const rateLimited = {
 	type: "message_end",
@@ -35,4 +35,11 @@ test("successful run has no error", () => {
 	applyPiEvent(state, { type: "message_end", message: { role: "assistant", stopReason: "stop" } });
 	expect(applyPiEvent(state, { type: "agent_end", willRetry: false })).toBe(true);
 	expect(state.status).toMatchObject({ busy: false, lastText: "hello world", error: null });
+});
+
+test("piArgs passes provider only together with model", () => {
+	expect(piArgs("s", "openai", undefined, false)).toEqual(["--mode", "rpc", "--session", "s"]);
+	expect(piArgs("s", "openai", "gpt-6-luna", true)).toEqual([
+		"--mode", "rpc", "--session", "s", "--provider", "openai", "--model", "gpt-6-luna", "-c",
+	]);
 });
