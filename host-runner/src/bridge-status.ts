@@ -4,6 +4,8 @@ export interface BridgeStatus {
 	endedAt: number | null;
 	lastText: string | null;
 	error: string | null;
+	rateLimitError: string | null;
+	rateLimitedAt: number | null;
 }
 
 export interface BridgeState {
@@ -14,7 +16,7 @@ export interface BridgeState {
 
 export function initialBridgeState(): BridgeState {
 	return {
-		status: { busy: false, startedAt: null, endedAt: null, lastText: null, error: null },
+		status: { busy: false, startedAt: null, endedAt: null, lastText: null, error: null, rateLimitError: null, rateLimitedAt: null },
 		pendingText: "",
 		pendingError: null,
 	};
@@ -48,7 +50,10 @@ export function applyPiEvent(state: BridgeState, event: any): boolean {
 			typeof message.errorMessage === "string" && message.errorMessage.trim() ? message.errorMessage : "unknown error";
 		state.pendingText = `agent error: ${errorMessage}`;
 		state.pendingError = errorMessage;
-		return false;
+		if (!/rate.?limit|429|too many requests/i.test(errorMessage)) return false;
+		status.rateLimitError = errorMessage;
+		status.rateLimitedAt = Date.now();
+		return true;
 	}
 	if (event.type === "agent_end") {
 		if (event.willRetry === true) return false;
