@@ -62,3 +62,10 @@ export function applyPiEvent(state: BridgeState, event: any): boolean {
 	}
 	return false;
 }
+
+export function piArgs(session: string, provider: string, model: string | undefined, resume: boolean): string[] {
+	const args = ["--mode", "rpc", "--session", session];
+	if (model) args.push("--provider", provider, "--model", model);
+	if (resume) args.push("-c");
+	return args;
+}

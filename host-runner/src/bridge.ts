@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createServer, type Socket } from "node:net";
 import { existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { applyPiEvent, initialBridgeState } from "./bridge-status";
+import { applyPiEvent, initialBridgeState, piArgs } from "./bridge-status";
 
 function arg(name: string): string | undefined {
 	const i = process.argv.indexOf(`--${name}`);
@@ -47,13 +47,11 @@ function updateStatus(chunk: string): void {
 	}
 }
 
-const piArgs = ["--mode", "rpc", "--session", session, "--provider", provider];
-if (model) piArgs.push("--model", model);
-if (existsSync(session)) piArgs.push("-c");
+const args = piArgs(session, provider, model, existsSync(session));
 
-console.log(`[bridge] pi ${piArgs.join(" ")} (cwd ${dir})`);
+console.log(`[bridge] pi ${args.join(" ")} (cwd ${dir})`);
 
-const pi = spawn("pi", piArgs, { cwd: dir, env: process.env });
+const pi = spawn("pi", args, { cwd: dir, env: process.env });
 const clients = new Set<Socket>();
 
 pi.stdout.setEncoding("utf-8");
