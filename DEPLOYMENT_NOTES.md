@@ -81,6 +81,9 @@ and are removed by the connector once a ticket finalizes.
   the key and verifies both model IDs through OpenAI's models endpoint. `pi`
   inherits its container/host process's env, so any key added there reaches the
   agent.
+- pi retry settings live only in `~/.pi/agent/settings.json`; on peeper set
+  `{"retry":{"maxRetries":6}}` (about 2 min of exponential backoff, spanning a
+  full TPM minute).
 - Previously `PI_PROVIDER=openrouter` with `PI_MODEL=anthropic/claude-opus-4.8`.
 - Per-key cost attribution: any unset key falls back to the shared
   `OPENROUTER_API_KEY` (or the `ANTHROPIC_`/`OPENAI_` equivalent), so nothing
@@ -146,6 +149,6 @@ firewall change.
 - The pi home dir (`/home/agent/.pi`, bind-mounted from `data/pi-home`) must be
   writable by `agent` (uid 1001) or `pi` fails with `EACCES`; the deploy
   script `chmod 777`s the data dirs.
-- Host components use a user-local pi 0.87.1 (`bun install -g`, so
+- Host components use a user-local pi 1.0.4 (`bun install -g`, so
   `~/.bun/bin/pi`, first on their PATH). The system `/usr/bin/pi` 0.80.3 is
   still installed but unused; it predates the `gpt-6-*` models.

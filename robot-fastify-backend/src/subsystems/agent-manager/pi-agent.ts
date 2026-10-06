@@ -60,10 +60,8 @@ export class PiAgent extends EventEmitter {
 
 		const args = ["--mode", "rpc"];
 
-		if (this.options.provider) {
-			args.push("--provider", this.options.provider);
-		}
 		if (this.options.model) {
+			if (this.options.provider) args.push("--provider", this.options.provider);
 			args.push("--model", this.options.model);
 		}
 		if (this.options.tools) {

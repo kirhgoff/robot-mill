@@ -165,7 +165,7 @@ see [`DEPLOYMENT_NOTES.md`](DEPLOYMENT_NOTES.md)).
 
 - `git`, `tmux`, Docker or Podman with Compose
 - [Bun](https://bun.sh): `curl -fsSL https://bun.sh/install | bash`
-- pi: `bun install -g @earendil-works/pi-coding-agent@0.87.1` (this puts `pi`
+- pi: `bun install -g @earendil-works/pi-coding-agent@1.0.4` (this puts `pi`
   in `~/.bun/bin`, which the start scripts add to `PATH`)
 - SSH or HTTPS git access to your repos, with a git identity configured
 
