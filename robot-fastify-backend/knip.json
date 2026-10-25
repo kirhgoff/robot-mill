@@ -1,0 +1,4 @@
+{
+  "ignoreDependencies": ["pino-pretty"],
+  "ignoreBinaries": ["pi"]
+}

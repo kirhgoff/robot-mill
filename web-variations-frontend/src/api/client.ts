@@ -4,7 +4,7 @@
 
 const BASE = "/api";
 
-export type VariationKind = "main" | "variation";
+type VariationKind = "main" | "variation";
 
 export interface Variation {
 	id: string;

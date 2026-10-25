@@ -40,11 +40,6 @@ export interface AgentOutput {
 	data: unknown;
 }
 
-export interface PromptRequest {
-	agentId: string;
-	message: string;
-}
-
 export interface SpawnAgentRequest {
 	name: string;
 	cwd?: string;
@@ -55,12 +50,6 @@ export interface SpawnAgentRequest {
 	sessionId?: string;
 	/** Resume an existing session file */
 	resumeSession?: boolean;
-}
-
-export interface AgentCommand {
-	type: "prompt" | "abort" | "new_session" | "kill" | "status";
-	agentId: string;
-	payload?: unknown;
 }
 
 export interface SystemStatus {

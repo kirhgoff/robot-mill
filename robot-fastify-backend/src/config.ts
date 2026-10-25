@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 
 export type AppEnv = "production" | "development";
 
-export const PROVIDER_API_KEY_ENV: Record<string, string> = {
+const PROVIDER_API_KEY_ENV: Record<string, string> = {
 	anthropic: "ANTHROPIC_API_KEY",
 	openrouter: "OPENROUTER_API_KEY",
 	openai: "OPENAI_API_KEY",

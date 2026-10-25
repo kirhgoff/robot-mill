@@ -1,4 +1,4 @@
-export interface Limit {
+interface Limit {
 	limit: number;
 	remaining: number;
 }

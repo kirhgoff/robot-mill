@@ -87,7 +87,7 @@ function parseCompose(out: string): ComposeService[] {
 	}
 }
 
-export async function dockerComposeCheck(projectDir: string, timeoutMs: number): Promise<Verdict> {
+async function dockerComposeCheck(projectDir: string, timeoutMs: number): Promise<Verdict> {
 	const res = await run("docker", ["compose", "ps", "--format", "json"], projectDir, timeoutMs);
 	if (res.code !== 0) {
 		return { status: "fail", detail: `docker compose ps failed: ${detailFrom(res)}` };

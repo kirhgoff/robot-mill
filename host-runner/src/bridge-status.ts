@@ -1,4 +1,4 @@
-export interface BridgeStatus {
+interface BridgeStatus {
 	busy: boolean;
 	startedAt: number | null;
 	endedAt: number | null;
