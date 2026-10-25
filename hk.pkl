@@ -1,0 +1,73 @@
+amends "package://github.com/jdx/hk/releases/download/v2.8.1/hk@2.8.1#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.8.1/hk@2.8.1#/Builtins.pkl"
+
+local fast = new Mapping<String, Step> {
+    ["typos"] = Builtins.typos
+    ["betterleaks"] {
+        check = "betterleaks git --no-banner --redact"
+    }
+    ["actionlint"] = Builtins.actionlint
+    ["zizmor"] {
+        glob = List(".github/workflows/*.yml", ".github/dependabot.yml")
+        check = "zizmor {{ files }}"
+    }
+    ["hadolint"] {
+        glob = List("**/Dockerfile")
+        check = "hadolint {{ files }}"
+    }
+    ["shellcheck"] {
+        glob = List("scripts/*.sh", "install/*.sh", "host-runner/*.sh")
+        check = "shellcheck {{ files }}"
+    }
+    ["agnix"] {
+        glob = List("AGENTS.md", "CLAUDE.md")
+        check = "agnix ."
+    }
+}
+
+local function packageSteps(dir: String, test: Boolean): Mapping<String, Step> = new {
+    ["\(dir)-tsc"] {
+        glob = List("\(dir)/**")
+        check = "cd \(dir) && bun run check"
+    }
+    ["\(dir)-knip"] {
+        glob = List("\(dir)/**")
+        check = "cd \(dir) && bunx knip@6.43.0"
+    }
+    when (test) {
+        ["\(dir)-test"] {
+            glob = List("\(dir)/**")
+            check = "cd \(dir) && bun test"
+        }
+    }
+}
+
+local all = (fast) {
+    ...packageSteps("health-monitor", true)
+    ...packageSteps("host-runner", true)
+    ...packageSteps("linear-connector", true)
+    ...packageSteps("robot-fastify-backend", true)
+    ...packageSteps("telegram-frontend", false)
+    ["web-variations-frontend-knip"] {
+        glob = List("web-variations-frontend/**")
+        check = "cd web-variations-frontend && bunx knip@6.43.0"
+    }
+}
+
+hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = fast
+    }
+    ["pre-push"] {
+        steps = all
+    }
+    ["check"] {
+        steps = all
+    }
+    ["fix"] {
+        fix = true
+        steps = all
+    }
+}
