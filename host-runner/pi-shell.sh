@@ -10,6 +10,7 @@ DIR="$HOME/Projects/$P"
 export PATH="$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 ENV_FILE="$HOME/.envs/robot-mill/host-runner.env"
+# shellcheck source=/dev/null
 [ -f "$ENV_FILE" ] && set -a && . "$ENV_FILE" && set +a
 
 if [ -n "${GITHUB_TOKEN:-}" ]; then
