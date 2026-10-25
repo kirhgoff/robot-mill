@@ -4,7 +4,7 @@ import "package://github.com/jdx/hk/releases/download/v2.8.1/hk@2.8.1#/Builtins.
 local fast = new Mapping<String, Step> {
     ["typos"] = Builtins.typos
     ["betterleaks"] {
-        check = "betterleaks git --no-banner --redact"
+        check = "betterleaks git --staged --no-banner --redact"
     }
     ["actionlint"] = Builtins.actionlint
     ["zizmor"] {
@@ -43,6 +43,9 @@ local function packageSteps(dir: String, test: Boolean): Mapping<String, Step> =
 }
 
 local all = (fast) {
+    ["betterleaks"] {
+        check = "betterleaks git --no-banner --redact"
+    }
     ...packageSteps("health-monitor", true)
     ...packageSteps("host-runner", true)
     ...packageSteps("linear-connector", true)
