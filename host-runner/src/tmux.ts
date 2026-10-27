@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 
-export function sessionName(project: string): string {
+function sessionName(project: string): string {
 	return `pi-${project}`;
 }
 

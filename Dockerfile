@@ -19,13 +19,13 @@ ENV PATH="/home/agent/.local/share/mise/shims:${PATH}"
 
 # ── Layer 2: Backend ──────────────────────────────────────────────────────────
 COPY --chown=agent:agent robot-fastify-backend/package.json robot-fastify-backend/bun.lock* /home/agent/backend/
-RUN cd /home/agent/backend && bun install --production
+RUN bun install --production --cwd /home/agent/backend
 COPY --chown=agent:agent robot-fastify-backend/src/ /home/agent/backend/src/
 COPY --chown=agent:agent robot-fastify-backend/tsconfig.json /home/agent/backend/
 
 # ── Layer 3: Telegram frontend ────────────────────────────────────────────────
 COPY --chown=agent:agent telegram-frontend/package.json telegram-frontend/bun.lock* /home/agent/telegram-frontend/
-RUN cd /home/agent/telegram-frontend && bun install --production
+RUN bun install --production --cwd /home/agent/telegram-frontend
 COPY --chown=agent:agent telegram-frontend/src/ /home/agent/telegram-frontend/src/
 COPY --chown=agent:agent telegram-frontend/tsconfig.json /home/agent/telegram-frontend/
 
@@ -35,6 +35,7 @@ COPY --chown=agent:agent web-console/ /home/agent/web-console/
 # ── Layer 4: Session storage directory ────────────────────────────────────────
 RUN mkdir -p /data/agent-sessions && chown agent:agent /data/agent-sessions
 
+# hadolint ignore=DL3066
 USER agent
 WORKDIR /workspace
 

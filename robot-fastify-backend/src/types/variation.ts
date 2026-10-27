@@ -2,13 +2,13 @@
  * Variation types — a variation is a git worktree + agent + dev server.
  */
 
-export type VariationStatus =
+type VariationStatus =
 	| "creating" // agent is making initial changes
 	| "running" // dev server is up
 	| "stopped" // dev server is down, worktree still exists
 	| "error"; // something went wrong
 
-export type VariationKind = "main" | "variation";
+type VariationKind = "main" | "variation";
 
 export interface Variation {
 	/** Unique variation ID */
