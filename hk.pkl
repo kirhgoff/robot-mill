@@ -11,12 +11,8 @@ local fast = new Mapping<String, Step> {
         glob = List(".github/workflows/*.yml", ".github/dependabot.yml")
         check = "zizmor {{ files }}"
     }
-    ["hadolint"] {
-        glob = List("**/Dockerfile")
-        check = "hadolint {{ files }}"
-    }
     ["shellcheck"] {
-        glob = List("scripts/*.sh", "install/*.sh", "host-runner/*.sh")
+        glob = List("**/*.sh")
         check = "shellcheck {{ files }}"
     }
     ["agnix"] {
@@ -46,15 +42,7 @@ local all = (fast) {
     ["betterleaks"] {
         check = "betterleaks git --no-banner --redact"
     }
-    ...packageSteps("health-monitor", true)
-    ...packageSteps("host-runner", true)
-    ...packageSteps("linear-connector", true)
-    ...packageSteps("robot-fastify-backend", true)
-    ...packageSteps("telegram-frontend", false)
-    ["web-variations-frontend-knip"] {
-        glob = List("web-variations-frontend/**")
-        check = "cd web-variations-frontend && bunx knip@6.43.0"
-    }
+    ...packageSteps("mill", false)
 }
 
 hooks {

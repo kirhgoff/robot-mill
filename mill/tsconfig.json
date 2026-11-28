@@ -3,11 +3,11 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["node", "bun-types"],
+    "types": ["bun"],
     "strict": true,
-    "skipLibCheck": true,
+    "noUncheckedIndexedAccess": true,
     "noEmit": true,
-    "esModuleInterop": true
+    "skipLibCheck": true
   },
   "include": ["src"]
 }

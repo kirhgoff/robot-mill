@@ -1,4 +1,0 @@
-{
-  "entry": ["src/bridge.ts"],
-  "ignoreBinaries": ["pi"]
-}

@@ -7,13 +7,7 @@ updates:
     cooldown:
       default-days: 7
   - package-ecosystem: bun
-    directories:
-      - /health-monitor
-      - /host-runner
-      - /linear-connector
-      - /robot-fastify-backend
-      - /telegram-frontend
-      - /web-variations-frontend
+    directory: /mill
     schedule:
       interval: weekly
     cooldown:

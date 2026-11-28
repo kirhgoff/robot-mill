@@ -7,13 +7,12 @@ typos = "1.51.1"
 betterleaks = "1.9.0"
 actionlint = "1.7.12"
 zizmor = "1.31.1"
-hadolint = "2.15.1"
 shellcheck = "0.11.0"
 "github:agent-sh/agnix" = "0.59.3"
 
 [tasks.deps]
-description = "Install dependencies of every package"
-run = "for d in health-monitor host-runner linear-connector robot-fastify-backend telegram-frontend web-variations-frontend; do (cd $d && bun install); done"
+description = "Install dependencies of the mill package"
+run = "cd mill && bun install"
 
 [tasks.setup]
 description = "Install dependencies and the git hooks"
