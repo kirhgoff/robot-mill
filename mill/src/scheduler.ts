@@ -1,7 +1,7 @@
 import type { AgentType, Task, TaskKind } from "./store";
 
 export type Slot = { type: AgentType; busy: boolean };
-export type Assignment = { task: Task; type: AgentType };
+type Assignment = { task: Task; type: AgentType };
 
 const priority: Record<TaskKind, number> = { fix: 0, review: 1, build: 2 };
 

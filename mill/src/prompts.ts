@@ -6,7 +6,7 @@ function ticketLine(task: Task) {
   return `Ticket ${task.ticket_id} (${task.ticket_url}): ${task.title}`;
 }
 
-export function buildPrompt(task: Task) {
+function buildPrompt(task: Task) {
   return [
     `You are the worker for task ${task.id}.`,
     ticketLine(task),
@@ -18,7 +18,7 @@ export function buildPrompt(task: Task) {
   ].join("\n");
 }
 
-export function reviewPrompt(task: Task) {
+function reviewPrompt(task: Task) {
   return [
     `You are the reviewer for task ${task.id}.`,
     ticketLine(task),
@@ -28,7 +28,7 @@ export function reviewPrompt(task: Task) {
   ].join("\n");
 }
 
-export function fixPrompt(task: Task) {
+function fixPrompt(task: Task) {
   return [
     `Fix round for task ${task.parent}.`,
     ticketLine(task),

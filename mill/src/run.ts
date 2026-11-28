@@ -1,4 +1,4 @@
-export type RunResult = { code: number; stdout: string };
+type RunResult = { code: number; stdout: string };
 export type Runner = (argv: string[], cwd?: string) => Promise<RunResult>;
 
 export const run: Runner = async (argv, cwd) => {

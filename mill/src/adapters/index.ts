@@ -10,7 +10,7 @@ export type LaunchContext = {
   conversationId: string | null;
 };
 
-export type Launch = { argv: string[]; env: Record<string, string> };
+type Launch = { argv: string[]; env: Record<string, string> };
 
 export type Adapter = {
   type: AgentType;

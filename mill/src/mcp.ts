@@ -3,7 +3,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { Tasks } from "./tasks";
 
-export const dispatcherSession = "mill-dispatcher";
+const dispatcherSession = "mill-dispatcher";
 
 const worker = z.enum(["claude", "codex"]);
 
