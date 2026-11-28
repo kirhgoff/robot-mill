@@ -198,18 +198,45 @@ test("after a fix a second review is queued, and after round 2 the fix ends the 
   expect(sentTexts).toContain(`KIR-1: PR ready for you: ${prUrl}`);
 });
 
-test("submit_review refuses APPROVE at the schema", async () => {
-  await openPr();
+async function withClient(session: string, work: (client: Client) => Promise<void>) {
   const server = startServer(0, tasks);
   try {
     const client = new Client({ name: "test", version: "0" });
-    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.port}/mcp?session=mill-t2`)));
-    const result = await client.callTool({ name: "submit_review", arguments: { task: "t2", event: "APPROVE", body: "ok", comments: [] } });
-    expect(result.isError).toBe(true);
-    expect(posted).toEqual([]);
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.port}/mcp?session=${session}`)));
+    await work(client);
   } finally {
     server.stop(true);
   }
+}
+
+const resultText = (result: Awaited<ReturnType<Client["callTool"]>>) => (result.content as { text: string }[])[0]?.text ?? "";
+
+test("a review session posts a COMMENT review over MCP", async () => {
+  await openPr();
+  await withClient("mill-t2", async (client) => {
+    const result = await client.callTool({ name: "submit_review", arguments: { task: "t2", event: "COMMENT", body: "lgtm", comments: [] } });
+    expect(result.isError).toBeFalsy();
+    expect(posted).toEqual([clean]);
+    expect(tasks.get("t2")?.state).toBe("done");
+  });
+});
+
+test("submit_review refuses APPROVE at the schema", async () => {
+  await openPr();
+  await withClient("mill-t2", async (client) => {
+    const result = await client.callTool({ name: "submit_review", arguments: { task: "t2", event: "APPROVE", body: "ok", comments: [] } });
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain("COMMENT");
+    expect(resultText(result)).toContain("REQUEST_CHANGES");
+    expect(posted).toEqual([]);
+  });
+});
+
+test("a build session does not see submit_review", async () => {
+  await openPr();
+  await withClient("mill-t1", async (client) => {
+    expect((await client.listTools()).tools.map((tool) => tool.name)).not.toContain("submit_review");
+  });
 });
 
 function fakeGh(rules: object[], invitations: object[] = []) {
