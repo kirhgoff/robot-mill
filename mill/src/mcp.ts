@@ -84,6 +84,21 @@ export function createMcpServer(tasks: Tasks, session: string) {
       },
       ({ task, pr_url, failure }) => respond(async () => tasks.complete(taskFor(task), { pr_url, failure }).then(() => "recorded")),
     );
+    if (tasks.activeFor(session)?.kind === "review") {
+      server.registerTool(
+        "submit_review",
+        {
+          description: "Post your review of the pull request",
+          inputSchema: {
+            task: z.string(),
+            event: z.enum(["COMMENT", "REQUEST_CHANGES"]),
+            body: z.string(),
+            comments: z.array(z.object({ path: z.string(), line: z.number().int().positive(), body: z.string() })),
+          },
+        },
+        ({ task, event, body, comments }) => respond(async () => tasks.submitReview(taskFor(task), { event, body, comments }).then(() => "posted")),
+      );
+    }
   }
 
   return server;

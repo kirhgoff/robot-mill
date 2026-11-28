@@ -101,6 +101,7 @@ test("a failed task moves its ticket to Agent Failed with a comment", async () =
     baseUrl: () => "http://x",
     hookCommand: ["hook"],
     checkRepo: async () => {},
+    postReview: async () => {},
   });
   const task = store.insertTask({ kind: "build", title: "T", ticket_id: "KIR-9", state: "running" });
   await tasks.complete(task, { failure: "no repo" });
@@ -135,6 +136,7 @@ function startWebhook(withSecret = true) {
     baseUrl: () => "http://x",
     hookCommand: ["hook"],
     checkRepo: async () => {},
+    postReview: async () => {},
   });
   const webhook = withSecret ? createLinearWebhook({ secret, store, tasks, linear: linear(), now: () => now }) : undefined;
   server = startServer(0, tasks, undefined, webhook);

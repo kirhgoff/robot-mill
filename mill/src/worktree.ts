@@ -5,6 +5,7 @@ import { type Runner, runOrThrow } from "./run";
 export type Git = {
   ensureClone(repo: string): Promise<void>;
   addWorktree(repo: string, branch: string): Promise<string>;
+  addPrWorktree(repo: string, pr: number): Promise<string>;
   removeWorktree(repo: string, branch: string): Promise<void>;
 };
 
@@ -23,6 +24,12 @@ export function createGit(projects: string, runner: Runner): Git {
     async addWorktree(repo, branch) {
       const path = worktreePath(repo, branch);
       await runOrThrow(runner, ["git", "worktree", "add", "-b", branch, path, "origin/HEAD"], clonePath(repo));
+      return path;
+    },
+    async addPrWorktree(repo, pr) {
+      const path = worktreePath(repo, `review-${pr}`);
+      await runOrThrow(runner, ["git", "fetch", "origin", `pull/${pr}/head`], clonePath(repo));
+      await runOrThrow(runner, ["git", "worktree", "add", "--detach", path, "FETCH_HEAD"], clonePath(repo));
       return path;
     },
     async removeWorktree(repo, branch) {

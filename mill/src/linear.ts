@@ -30,7 +30,7 @@ function toIssue(issue: RawIssue): LinearIssue {
   };
 }
 
-export type LinearTracker = Tracker & { issue(id: string): Promise<LinearIssue>; agentQueueIssues(): Promise<LinearIssue[]> };
+export type LinearTracker = Tracker & { issue(id: string): Promise<LinearIssue>; agentQueueIssues(): Promise<LinearIssue[]>; projects(): Promise<string[]> };
 
 export function createLinearTracker(config: LinearConfig): LinearTracker {
   const doFetch = config.fetch ?? (fetch as Fetch);
@@ -94,6 +94,9 @@ export function createLinearTracker(config: LinearConfig): LinearTracker {
     async issue(id) {
       const data = await graphql<{ issue: RawIssue }>(`query($id: String!) { issue(id: $id) { ${issueFields} } }`, { id });
       return toIssue(data.issue);
+    },
+    async projects() {
+      return (await resolve()).projects.map((project) => project.name);
     },
     async agentQueueIssues() {
       const data = await graphql<{ issues: { nodes: RawIssue[] } }>(

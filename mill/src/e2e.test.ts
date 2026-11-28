@@ -37,6 +37,7 @@ beforeEach(() => {
     baseUrl: () => `http://127.0.0.1:${server.port}`,
     hookCommand: ["mill-hook"],
     checkRepo: async () => {},
+    postReview: async () => {},
   });
   server = startServer(0, tasks);
 });

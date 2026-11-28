@@ -49,6 +49,7 @@ function setup(sharedStore = store) {
     baseUrl: () => "http://x",
     hookCommand: ["hook"],
     checkRepo: async () => {},
+    postReview: async () => {},
   });
   return { dispatcher, tasks, bot: createBot({ api: api(), chatId: "42", store: sharedStore, tasks, dispatcher }) };
 }
