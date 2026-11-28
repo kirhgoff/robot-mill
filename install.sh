@@ -78,13 +78,20 @@ install_agent() {
   fi
 }
 
-for formula in tmux gh cloudflared mise; do
-  command -v "$formula" >/dev/null || brew install "$formula"
+missing=()
+for tool in tmux gh cloudflared mise codex; do
+  command -v "$tool" >/dev/null || missing+=("$tool")
 done
+if (( ${#missing[@]} )); then
+  fix=""
+  for tool in "${missing[@]}"; do
+    if [[ "$tool" == codex ]]; then fix+="brew install --cask codex; "; else fix+="brew install $tool; "; fi
+  done
+  fail "missing: ${missing[*]}. As your admin user run: $fix"
+fi
 (cd "$repo" && mise install && mise run deps)
 
 command -v claude >/dev/null || { curl -fsSL https://claude.ai/install.sh | bash; }
-command -v codex >/dev/null || brew install codex
 
 if [[ -d "$dotfiles/.git" ]]; then
   git -C "$dotfiles" pull --ff-only
@@ -101,8 +108,13 @@ if [[ ! -e "$env_file" ]]; then
   (umask 077 && cp "$repo/mill/mill.env.example" "$env_file")
 fi
 
+tunnel_id="$(grep -E '^MILL_TUNNEL_ID=.+' "$env_file" | cut -d= -f2- | tr -d "'\"" || true)"
+credentials_line=""
+[[ -z "$tunnel_id" ]] || credentials_line="credentials-file: $HOME/.cloudflared/$tunnel_id.json"
+
 write_if_changed "$HOME/.cloudflared/config.yml" <<CONFIG || true
 tunnel: mill
+$credentials_line
 ingress:
   - hostname: hooks.kirhgoff.me
     path: ^/(github|linear)\$

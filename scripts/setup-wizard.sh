@@ -177,6 +177,11 @@ webhook_rejects_unsigned() {
   [[ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "https://$DOMAIN/github")" == 401 ]]
 }
 
+tools_installed() {
+  local tool
+  for tool in tmux gh cloudflared mise codex; do command -v "$tool" || return 1; done
+}
+
 domain_resolves() {
   [[ -n "$(dig +short "$DOMAIN")" ]]
 }
@@ -187,22 +192,29 @@ telegram_token_works() {
 
 run_wizard() {
 
-TOTAL_STAGES=8
+TOTAL_STAGES=9
 ENV_FILE="$HOME/.config/mill/mill.env"
 
 banner "Robot mill setup"
 
+stage "Homebrew tools"
+say "Run this from your own account: $MILL_USER is a standard user and cannot run brew."
+say "  brew install tmux gh cloudflared mise"
+say "  brew install --cask codex"
+confirm "Run them now?" && { brew install tmux gh cloudflared mise && brew install --cask codex; }
+check_until "all five tools are installed" tools_installed
+
 stage "macOS user $MILL_USER"
 say "Run this from your own account first. The farm runs as $MILL_USER, logged in behind your session."
 step "System Settings → Users & Groups → Add User → name it $MILL_USER."
-step "Make it an Administrator: Homebrew needs it to install tmux, gh and cloudflared."
+step "Leave it a Standard user."
 step "Users & Groups → Automatically log in as → $MILL_USER (FileVault blocks this; leave it off for this Mac)."
 step "Control Center → Fast User Switching → Show in Menu Bar, then switch to $MILL_USER and log in once."
 check_until "macOS user $MILL_USER exists" dscl . -read "/Users/$MILL_USER"
 if [[ "$(whoami)" != "$MILL_USER" ]]; then
   say "Now switch to $MILL_USER, open Terminal, clone this repo to ~/Projects/robot-mill and run:"
   say "  scripts/setup-wizard.sh"
-  say "Stages 2-8 run as $MILL_USER."
+  say "Stages 3-9 run as $MILL_USER."
   exit 0
 fi
 
@@ -254,6 +266,10 @@ step "Log in: cloudflared tunnel login (pick the kirhgoff.me zone in the browser
 step "Create it: cloudflared tunnel create mill"
 step "Route DNS: cloudflared tunnel route dns mill $DOMAIN"
 check_until "tunnel mill exists" cloudflared tunnel info mill
+step "Copy the tunnel id (the UUID in the 'Created tunnel mill with id ...' line, or from cloudflared tunnel list)."
+ask MILL_TUNNEL_ID "Tunnel id:"
+write_env MILL_TUNNEL_ID "$MILL_TUNNEL_ID"
+"$REPO/install.sh"
 check_until "$DOMAIN resolves" domain_resolves
 
 stage "Telegram and Linear keys"
