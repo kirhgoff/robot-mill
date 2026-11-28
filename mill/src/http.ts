@@ -1,8 +1,9 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { dispatcherSession } from "./dispatcher";
 import { createMcpServer } from "./mcp";
 import type { Tasks } from "./tasks";
 
-export function startServer(port: number, tasks: Tasks) {
+export function startServer(port: number, tasks: Tasks, onDispatcherTurnEnd: (payload: unknown) => void = () => {}) {
   async function handleMcp(request: Request, session: string) {
     const server = createMcpServer(tasks, session);
     const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
@@ -12,7 +13,8 @@ export function startServer(port: number, tasks: Tasks) {
 
   async function handleTurnEnd(request: Request, session: string) {
     const payload = await request.json().catch(() => ({}));
-    tasks.onTurnEnd(session, payload);
+    if (session === dispatcherSession) onDispatcherTurnEnd(payload);
+    else tasks.onTurnEnd(session, payload);
     return new Response("ok");
   }
 

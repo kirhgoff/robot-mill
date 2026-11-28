@@ -60,7 +60,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   failure TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
-)`;
+);
+CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS questions (message_id INTEGER PRIMARY KEY, task_id TEXT NOT NULL);`;
 
 const blank = {
   parent: null,
@@ -86,7 +88,7 @@ function bind(row: Record<string, unknown>) {
 
 export function openStore(path: string) {
   const db = new Database(path);
-  db.run(schema);
+  db.exec(schema);
 
   function getTask(id: string) {
     return db.query("SELECT * FROM tasks WHERE id = $id").get({ $id: id }) as Task | null;
@@ -113,7 +115,23 @@ export function openStore(path: string) {
     return state ? rows.filter((task) => task.state === state) : rows;
   }
 
-  return { getTask, insertTask, updateTask, listTasks };
+  function getKv(key: string) {
+    return (db.query("SELECT value FROM kv WHERE key = $key").get({ $key: key }) as { value: string } | null)?.value ?? null;
+  }
+
+  function setKv(key: string, value: string) {
+    db.query("INSERT OR REPLACE INTO kv (key, value) VALUES ($key, $value)").run({ $key: key, $value: value });
+  }
+
+  function addQuestion(messageId: number, taskId: string) {
+    db.query("INSERT OR REPLACE INTO questions (message_id, task_id) VALUES ($messageId, $taskId)").run({ $messageId: messageId, $taskId: taskId });
+  }
+
+  function questionTask(messageId: number) {
+    return (db.query("SELECT task_id FROM questions WHERE message_id = $messageId").get({ $messageId: messageId }) as { task_id: string } | null)?.task_id ?? null;
+  }
+
+  return { getTask, insertTask, updateTask, listTasks, getKv, setKv, addQuestion, questionTask };
 }
 
 export type Store = ReturnType<typeof openStore>;
