@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { loadEnv } from "./env";
 import { startServer } from "./http";
 import { createDispatcher } from "./dispatcher";
 import { createLogNotifier } from "./notifier";
@@ -19,6 +20,9 @@ import { createCheckRepo, linearRepos, protectRepo } from "./protect";
 import { createLogTracker } from "./tracker";
 import { createPrViewer, createRecover } from "./recover";
 import { createGit } from "./worktree";
+
+const [, , command, hookUrl, payloadArg] = process.argv;
+if (command === "serve") loadEnv(process.env.MILL_ENV_FILE ?? join(homedir(), ".config", "mill", "mill.env"));
 
 const botLogin = process.env.MILL_BOT_LOGIN ?? "millwright";
 
@@ -94,7 +98,6 @@ async function protect(args: string[]) {
   }
 }
 
-const [, , command, hookUrl, payloadArg] = process.argv;
 if (command === "hook" && hookUrl) await forwardHook(hookUrl, payloadArg);
 else if (command === "protect") await protect(process.argv.slice(3));
 else serve();
