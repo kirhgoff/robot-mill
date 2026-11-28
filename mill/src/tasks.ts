@@ -212,10 +212,11 @@ export function createTasks(deps: TasksDeps) {
   }
 
   function onTurnEnd(session: string, payload: unknown) {
-    const task = store.listTasks().findLast((candidate) => candidate.session === session);
-    if (!task?.agent_type || task.conversation_id) return;
-    const conversationId = adapters[task.agent_type].conversationId(payload);
-    if (conversationId) store.updateTask(task.id, { conversation_id: conversationId });
+    const latest = store.listTasks().findLast((candidate) => candidate.session === session);
+    const root = latest?.kind === "fix" ? parentOf(latest) : latest;
+    if (!root?.agent_type || root.conversation_id) return;
+    const conversationId = adapters[root.agent_type].conversationId(payload);
+    if (conversationId) store.updateTask(root.id, { conversation_id: conversationId });
   }
 
   return {

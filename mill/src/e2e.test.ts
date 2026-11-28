@@ -154,3 +154,15 @@ test("the turn-end hook records the codex thread id", async () => {
 test("unknown paths are 404", async () => {
   expect((await fetch(`http://127.0.0.1:${server.port}/other?session=x`)).status).toBe(404);
 });
+
+test("a codex thread id arriving during a fix round is used to resume the next fix", async () => {
+  await tasks.submit({ title: "A", description: "", linear_project: "p", worker: "codex" });
+  await call(await connect("mill-t1"), "complete_task", { task: "t1", pr_url: "https://x/pull/1" });
+  await tasks.queueFix("t1");
+  await fetch(`http://127.0.0.1:${server.port}/hook/turn-end?session=mill-t1`, { method: "POST", body: JSON.stringify({ "thread-id": "th-7" }) });
+  expect(tasks.get("t1")?.conversation_id).toBe("th-7");
+  tmux.sessions.delete("mill-t1");
+  await call(await connect("mill-t1"), "complete_task", { task: "t3", pr_url: "https://x/pull/1" });
+  await tasks.queueFix("t1");
+  expect(tmux.sessions.get("mill-t1")?.argv.slice(0, 3)).toEqual(["codex", "resume", "th-7"]);
+});
