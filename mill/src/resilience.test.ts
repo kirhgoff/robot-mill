@@ -119,6 +119,24 @@ test("a limited turn pauses the task, blocks its type until the reset and resume
   expect(tasks.get("t2")?.state).toBe("running");
 });
 
+test("a limit line still on screen after the resume does not pause the task again, a new one does", async () => {
+  const tasks = farm(openStore(":memory:"));
+  await submit(tasks, "claude");
+  tmux.panes.set("mill-t1", limitText);
+  await tasks.onTurnEnd("mill-t1", {});
+  clock = Date.parse("2026-11-28T20:01:00Z");
+  timers[0]?.fn();
+  await tasks.tick();
+  expect(tasks.get("t1")?.state).toBe("running");
+
+  await tasks.onTurnEnd("mill-t1", {});
+  expect(tasks.get("t1")).toMatchObject({ state: "running", reset_at: null });
+
+  tmux.panes.set("mill-t1", "You've hit your limit · resets 9pm (America/New_York)");
+  await tasks.onTurnEnd("mill-t1", {});
+  expect(tasks.get("t1")?.state).toBe("paused_limit");
+});
+
 test("an unreadable reset time pauses for an hour and says so", async () => {
   const tasks = farm(openStore(":memory:"));
   await submit(tasks, "claude");

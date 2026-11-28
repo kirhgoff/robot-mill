@@ -1,4 +1,4 @@
-export type LimitHit = { resetAt: Date; guessed: boolean };
+export type LimitHit = { resetAt: Date; guessed: boolean; line: string };
 
 const hourMs = 3_600_000;
 const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
@@ -51,6 +51,6 @@ export function limitDetector(phrase: RegExp) {
     if (line === undefined) return null;
     const reset = resetPhrase.exec(line)?.[1];
     const parsed = reset ? parseReset(reset, now) : null;
-    return parsed ? { resetAt: parsed, guessed: false } : { resetAt: new Date(now.getTime() + hourMs), guessed: true };
+    return parsed ? { resetAt: parsed, guessed: false, line } : { resetAt: new Date(now.getTime() + hourMs), guessed: true, line };
   };
 }

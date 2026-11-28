@@ -318,7 +318,8 @@ export function createTasks(deps: TasksDeps) {
     const task = activeFor(session);
     if (task?.state !== "running" || !task.agent_type) return;
     const hit = adapters[task.agent_type].detectLimit(await tmux.capture(session), new Date(now()));
-    if (hit) await pauseForLimit(task, hit);
+    if (!hit && task.limit_line) store.updateTask(task.id, { limit_line: null });
+    if (hit && hit.line !== task.limit_line) await pauseForLimit(task, hit);
     else if ((task.last_signal_at ?? 0) < (task.last_prompt_at ?? 0)) await handleSilentTurn(task);
   }
 
@@ -332,7 +333,7 @@ export function createTasks(deps: TasksDeps) {
   }
 
   async function pauseForLimit(task: Task, hit: LimitHit) {
-    const paused = store.updateTask(task.id, { state: "paused_limit", reset_at: hit.resetAt.getTime() });
+    const paused = store.updateTask(task.id, { state: "paused_limit", reset_at: hit.resetAt.getTime(), limit_line: hit.line });
     armResume(paused);
     const time = hit.resetAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const note = hit.guessed ? " (reset time not readable, assuming 1 hour)" : "";

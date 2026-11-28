@@ -71,8 +71,8 @@ const limitCases: [string, typeof claude, string, Date | null][] = [
 for (const [file, adapter, label, expected] of limitCases) {
   test(`${adapter.type} limit fixture ${file} (${label})`, () => {
     const hit = adapter.detectLimit(`some output\n${fixture(file)}more output`, now);
-    if (expected) expect(hit).toEqual({ resetAt: expected, guessed: false });
-    else expect(hit).toEqual({ resetAt: new Date(now.getTime() + 3_600_000), guessed: true });
+    if (expected) expect(hit).toMatchObject({ resetAt: expected, guessed: false });
+    else expect(hit).toMatchObject({ resetAt: new Date(now.getTime() + 3_600_000), guessed: true });
   });
 }
 

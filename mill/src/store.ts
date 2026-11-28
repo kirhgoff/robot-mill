@@ -35,6 +35,7 @@ export type Task = {
   last_signal_at: number | null;
   nudges: number;
   reset_at: number | null;
+  limit_line: string | null;
   last_activity_at: number | null;
   created_at: number;
   updated_at: number;
@@ -67,6 +68,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   last_signal_at INTEGER,
   nudges INTEGER NOT NULL DEFAULT 0,
   reset_at INTEGER,
+  limit_line TEXT,
   last_activity_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -94,6 +96,7 @@ const blank = {
   last_signal_at: null,
   nudges: 0,
   reset_at: null,
+  limit_line: null,
   last_activity_at: null,
 };
 
