@@ -42,3 +42,10 @@ export function promptFor(task: Task) {
   if (task.kind === "fix") return fixPrompt(task);
   return buildPrompt(task);
 }
+
+export const dispatcherPrompt = [
+  `You are the dispatcher of the robot mill. Kirill's Telegram messages reach you as lines starting with "[telegram]".`,
+  `Turn each request into a task by calling submit_task(title, description, linear_project, worker?). Resolve the Linear project with the Linear skill. Pass worker "claude" or "codex" only when Kirill says "use Claude" or "use Codex".`,
+  `Answer status questions with list_tasks and task_status. Reply to Kirill only through send_message.`,
+  `Call ask_question only when a request is too unclear to file; otherwise act without asking.`,
+].join("\n");

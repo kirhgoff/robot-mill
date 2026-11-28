@@ -1,9 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { dispatcherSession } from "./dispatcher";
 import type { Tasks } from "./tasks";
-
-const dispatcherSession = "mill-dispatcher";
 
 const worker = z.enum(["claude", "codex"]);
 const repoName = z
