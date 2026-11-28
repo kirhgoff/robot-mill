@@ -1,3 +1,4 @@
+import { limitDetector } from "../limits";
 import type { Adapter, LaunchContext } from "./index";
 
 function flags(ctx: LaunchContext) {
@@ -10,9 +11,12 @@ function flags(ctx: LaunchContext) {
   ];
 }
 
+const promptArgs = (ctx: LaunchContext) => (ctx.prompt ? [ctx.prompt] : []);
+
 export const codex: Adapter = {
   type: "codex",
-  launch: (ctx) => ({ argv: ["codex", ...flags(ctx), ctx.prompt], env: {} }),
-  resume: (ctx) => ({ argv: ["codex", "resume", ctx.conversationId ?? "", ...flags(ctx), ctx.prompt], env: {} }),
+  launch: (ctx) => ({ argv: ["codex", ...flags(ctx), ...promptArgs(ctx)], env: {} }),
+  resume: (ctx) => ({ argv: ["codex", "resume", ctx.conversationId ?? "", ...flags(ctx), ...promptArgs(ctx)], env: {} }),
   conversationId: (payload) => (payload as { "thread-id"?: string })["thread-id"],
+  detectLimit: limitDetector(/usage limit[^\n]*/i),
 };

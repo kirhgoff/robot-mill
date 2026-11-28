@@ -108,7 +108,7 @@ If a `running` task ends a turn without calling `complete_task`, `ask_question` 
 
 ### Plan limits
 
-Each adapter detects its limit message, from the pane text or the hook payload, and parses the reset time. The task goes to `paused_limit` and releases its slot. Telegram gets "<type> hit its limit, resets <time>". At reset plus 1 minute, the server sends "continue" to the same session, and the task takes the next free slot of that type. The other types keep serving the queue.
+Each adapter detects its limit message, from the pane text or the hook payload, and parses the reset time. The task goes to `paused_limit` and keeps its slot, and no new task starts on that type until the reset, because the type's quota is exhausted. Telegram gets "<type> hit its limit, resets <time>". At reset plus 1 minute, the server sends "continue" to the same session and the task is `running` again. The other types keep serving the queue.
 
 ### Dispatcher resets
 

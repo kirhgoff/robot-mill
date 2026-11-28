@@ -5,6 +5,7 @@ export type StartedSession = { cwd: string; argv: string[]; env: Record<string, 
 export class FakeTmux implements Tmux {
   sessions = new Map<string, StartedSession>();
   sent = new Map<string, string[]>();
+  panes = new Map<string, string>();
 
   async has(name: string) {
     return this.sessions.has(name);
@@ -23,6 +24,6 @@ export class FakeTmux implements Tmux {
   }
 
   async capture(name: string) {
-    return (this.sent.get(name) ?? []).join("\n");
+    return this.panes.get(name) ?? "";
   }
 }

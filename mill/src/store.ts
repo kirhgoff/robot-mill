@@ -31,6 +31,12 @@ export type Task = {
   conversation_id: string | null;
   pr_url: string | null;
   failure: string | null;
+  last_prompt_at: number | null;
+  last_signal_at: number | null;
+  nudges: number;
+  reset_at: number | null;
+  limit_line: string | null;
+  last_activity_at: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -58,6 +64,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   conversation_id TEXT,
   pr_url TEXT,
   failure TEXT,
+  last_prompt_at INTEGER,
+  last_signal_at INTEGER,
+  nudges INTEGER NOT NULL DEFAULT 0,
+  reset_at INTEGER,
+  limit_line TEXT,
+  last_activity_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -80,6 +92,12 @@ const blank = {
   conversation_id: null,
   pr_url: null,
   failure: null,
+  last_prompt_at: null,
+  last_signal_at: null,
+  nudges: 0,
+  reset_at: null,
+  limit_line: null,
+  last_activity_at: null,
 };
 
 function bind(row: Record<string, unknown>) {

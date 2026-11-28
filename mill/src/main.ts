@@ -17,6 +17,7 @@ import { createReviewPoster } from "./github-app";
 import { createGh, owner } from "./github";
 import { createCheckRepo, linearRepos, protectRepo } from "./protect";
 import { createLogTracker } from "./tracker";
+import { createPrViewer, createRecover } from "./recover";
 import { createGit } from "./worktree";
 
 const botLogin = process.env.MILL_BOT_LOGIN ?? "millwright";
@@ -60,12 +61,19 @@ function serve() {
   });
   const baseUrl = () => `http://127.0.0.1:${port}`;
   const dispatcher = createDispatcher({ store, tmux, stateDir, baseUrl, hookCommand: [process.execPath, import.meta.path, "hook"] });
-  const linearWebhook = process.env.LINEAR_WEBHOOK_SECRET && linear ? createLinearWebhook({ secret: process.env.LINEAR_WEBHOOK_SECRET, store, tasks, linear }) : undefined;
+  const linearWebhook = process.env.LINEAR_WEBHOOK_SECRET && linear ? createLinearWebhook({ secret: process.env.LINEAR_WEBHOOK_SECRET, tasks, linear }) : undefined;
   const githubWebhook = process.env.GITHUB_WEBHOOK_SECRET
     ? createGithubWebhook({ secret: process.env.GITHUB_WEBHOOK_SECRET, tasks, botLogin, appLogin: process.env.MILL_APP_LOGIN ?? "mill-inspector[bot]" })
     : undefined;
   startServer(port, tasks, (payload) => dispatcher.onTurnEnd(payload), linearWebhook, githubWebhook);
   dispatcher.ensure().catch(console.error);
+  createRecover({
+    tasks,
+    tmux,
+    viewPr: createPrViewer(run),
+    agentQueue: linear ? () => linear.agentQueueIssues() : undefined,
+    botLogins: [botLogin, process.env.MILL_APP_LOGIN ?? "mill-inspector[bot]"],
+  })().catch(console.error);
   setInterval(() => dispatcher.tick().catch(console.error), 60_000);
   if (telegram) void createBot({ ...telegram, store, tasks, dispatcher }).run();
   console.log(`mill listening on 127.0.0.1:${port}`);

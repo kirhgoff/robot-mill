@@ -14,7 +14,7 @@ export function startServer(port: number, tasks: Tasks, onDispatcherTurnEnd: (pa
   async function handleTurnEnd(request: Request, session: string) {
     const payload = await request.json().catch(() => ({}));
     if (session === dispatcherSession) onDispatcherTurnEnd(payload);
-    else tasks.onTurnEnd(session, payload);
+    else await tasks.onTurnEnd(session, payload);
     return new Response("ok");
   }
 
