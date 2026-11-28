@@ -32,11 +32,12 @@ function serve() {
     process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID
       ? { api: createTelegramApi({ token: process.env.TELEGRAM_BOT_TOKEN, chatId: process.env.TELEGRAM_CHAT_ID }), chatId: process.env.TELEGRAM_CHAT_ID }
       : null;
+  const linear = process.env.LINEAR_API_KEY ? createLinearTracker({ apiKey: process.env.LINEAR_API_KEY, team: process.env.LINEAR_TEAM }) : null;
   const tasks = createTasks({
     store,
     tmux,
     git: createGit(projects, run),
-    tracker: process.env.LINEAR_API_KEY ? createLinearTracker({ apiKey: process.env.LINEAR_API_KEY, team: process.env.LINEAR_TEAM }) : createLogTracker(),
+    tracker: linear ?? createLogTracker(),
     notifier: telegram ? createTelegramNotifier(telegram.api, telegram.chatId, store) : createLogNotifier(),
     pool,
     sessionsDir: join(stateDir, "sessions"),
@@ -46,7 +47,7 @@ function serve() {
   });
   const baseUrl = () => `http://127.0.0.1:${port}`;
   const dispatcher = createDispatcher({ store, tmux, stateDir, baseUrl, hookCommand: [process.execPath, import.meta.path, "hook"] });
-  const linearWebhook = process.env.LINEAR_WEBHOOK_SECRET ? createLinearWebhook({ secret: process.env.LINEAR_WEBHOOK_SECRET, store, tasks }) : undefined;
+  const linearWebhook = process.env.LINEAR_WEBHOOK_SECRET && linear ? createLinearWebhook({ secret: process.env.LINEAR_WEBHOOK_SECRET, store, tasks, linear }) : undefined;
   startServer(port, tasks, (payload) => dispatcher.onTurnEnd(payload), linearWebhook);
   dispatcher.ensure().catch(console.error);
   setInterval(() => dispatcher.tick().catch(console.error), 60_000);

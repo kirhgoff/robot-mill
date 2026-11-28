@@ -4,9 +4,33 @@ type Fetch = (url: string, init: { method: string; headers: Record<string, strin
 
 export type LinearConfig = { apiKey: string; team?: string; fetch?: Fetch };
 
-type QueuedIssue = { identifier: string; title: string; description: string; project: string | null; labels: string[] };
+type LinearIssue = { identifier: string; url: string; title: string; description: string; state: string; project: string | null; labels: string[] };
 
-export type LinearTracker = Tracker & { agentQueueIssues(): Promise<QueuedIssue[]> };
+type RawIssue = {
+  identifier: string;
+  url: string;
+  title: string;
+  description: string | null;
+  state: { name: string };
+  project: { name: string } | null;
+  labels: { nodes: { name: string }[] };
+};
+
+const issueFields = "identifier url title description state { name } project { name } labels { nodes { name } }";
+
+function toIssue(issue: RawIssue): LinearIssue {
+  return {
+    identifier: issue.identifier,
+    url: issue.url,
+    title: issue.title,
+    description: issue.description ?? "",
+    state: issue.state.name,
+    project: issue.project?.name ?? null,
+    labels: issue.labels.nodes.map((label) => label.name),
+  };
+}
+
+export type LinearTracker = Tracker & { issue(id: string): Promise<LinearIssue>; agentQueueIssues(): Promise<LinearIssue[]> };
 
 export function createLinearTracker(config: LinearConfig): LinearTracker {
   const doFetch = config.fetch ?? (fetch as Fetch);
@@ -67,20 +91,16 @@ export function createLinearTracker(config: LinearConfig): LinearTracker {
       const issue = await graphql<{ issue: { id: string } }>(`query($id: String!) { issue(id: $id) { id } }`, { id: identifier });
       await graphql(`mutation($input: CommentCreateInput!) { commentCreate(input: $input) { success } }`, { input: { issueId: issue.issue.id, body } });
     },
+    async issue(id) {
+      const data = await graphql<{ issue: RawIssue }>(`query($id: String!) { issue(id: $id) { ${issueFields} } }`, { id });
+      return toIssue(data.issue);
+    },
     async agentQueueIssues() {
-      const data = await graphql<{
-        issues: { nodes: { identifier: string; title: string; description: string | null; project: { name: string } | null; labels: { nodes: { name: string }[] } }[] };
-      }>(
-        `query($key: String!) { issues(filter: { team: { key: { eq: $key } }, state: { name: { eq: "Agent Queue" } } }) { nodes { identifier title description project { name } labels { nodes { name } } } } }`,
+      const data = await graphql<{ issues: { nodes: RawIssue[] } }>(
+        `query($key: String!) { issues(filter: { team: { key: { eq: $key } }, state: { name: { eq: "Agent Queue" } } }) { nodes { ${issueFields} } } }`,
         { key: teamKey },
       );
-      return data.issues.nodes.map((issue) => ({
-        identifier: issue.identifier,
-        title: issue.title,
-        description: issue.description ?? "",
-        project: issue.project?.name ?? null,
-        labels: issue.labels.nodes.map((label) => label.name),
-      }));
+      return data.issues.nodes.map(toIssue);
     },
   };
 }

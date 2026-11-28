@@ -15,6 +15,17 @@ import { createGit } from "./worktree";
 type Sent = { query: string; variables: Record<string, any> };
 
 let sent: Sent[];
+let fetchedIssue: object;
+
+const queuedIssue = (labels: string[] = []) => ({
+  identifier: "KIR-20",
+  url: "https://linear.app/x/KIR-20",
+  title: "Do it",
+  description: "details",
+  state: { name: "Agent Queue" },
+  project: { name: "toni" },
+  labels: { nodes: labels.map((name) => ({ name })) },
+});
 
 const bootstrap = {
   viewer: { id: "viewer-1" },
@@ -37,7 +48,9 @@ const fakeFetch = async (_url: string, init: { body: string }) => {
     : request.query.includes("issueCreate")
       ? { issueCreate: { issue: { identifier: "KIR-9", url: "https://linear.app/x/KIR-9" } } }
       : request.query.includes("issue(id")
-        ? { issue: { id: "uuid-9" } }
+        ? request.query.includes("state {")
+          ? { issue: fetchedIssue }
+          : { issue: { id: "uuid-9" } }
         : {};
   return { json: async () => ({ data }) };
 };
@@ -46,6 +59,7 @@ const linear = () => createLinearTracker({ apiKey: "key", fetch: fakeFetch });
 
 beforeEach(() => {
   sent = [];
+  fetchedIssue = queuedIssue();
 });
 
 test("create sends the Agent Queue state, viewer assignee and project ids and returns identifier and url", async () => {
@@ -105,13 +119,7 @@ function post(body: object, options: { signature?: string; timestamp?: number } 
   return fetch(`http://127.0.0.1:${server.port}/linear`, { method: "POST", headers: { "linear-signature": signature }, body: raw });
 }
 
-const move = (state: string, extra: object = {}, identifier = "KIR-20") => ({
-  type: "Issue",
-  action: "update",
-  url: "https://linear.app/x/KIR-20",
-  updatedFrom: { stateId: "old" },
-  data: { identifier, title: "Do it", description: "details", state: { name: state }, project: { name: "toni" }, labels: [], ...extra },
-});
+const move = (id = "issue-uuid") => ({ type: "Issue", action: "update", updatedFrom: { stateId: "old" }, data: { id } });
 
 function startWebhook(withSecret = true) {
   store = openStore(":memory:");
@@ -128,44 +136,46 @@ function startWebhook(withSecret = true) {
     hookCommand: ["hook"],
     checkRepo: async () => {},
   });
-  const webhook = withSecret ? createLinearWebhook({ secret, store, tasks, now: () => now }) : undefined;
+  const webhook = withSecret ? createLinearWebhook({ secret, store, tasks, linear: linear(), now: () => now }) : undefined;
   server = startServer(0, tasks, undefined, webhook);
 }
 
 test("webhook rejects a bad signature and a stale timestamp and queues nothing", async () => {
   startWebhook();
-  expect((await post(move("Agent Queue"), { signature: "00".repeat(32) })).status).toBe(401);
-  expect((await post(move("Agent Queue"), { timestamp: now - 61_000 })).status).toBe(401);
+  expect((await post(move(), { signature: "00".repeat(32) })).status).toBe(401);
+  expect((await post(move(), { timestamp: now - 61_000 })).status).toBe(401);
   expect(store.listTasks()).toHaveLength(0);
   server.stop(true);
 });
 
-test("webhook queues one build task for a move into Agent Queue and ignores the same ticket twice", async () => {
+test("webhook queues one build task from the fetched issue even when the payload has no state, project or labels, and ignores the same ticket twice", async () => {
   startWebhook();
-  expect((await post(move("Agent Queue"))).status).toBe(200);
-  expect((await post(move("Agent Queue"))).status).toBe(200);
+  expect((await post(move())).status).toBe(200);
+  expect((await post(move())).status).toBe(200);
   expect(store.listTasks()).toHaveLength(1);
   expect(store.listTasks()[0]).toMatchObject({ kind: "build", title: "Do it", description: "details", linear_project: "toni", ticket_id: "KIR-20", ticket_url: "https://linear.app/x/KIR-20" });
   server.stop(true);
 });
 
-test("webhook ignores create events and moves into other states", async () => {
+test("webhook ignores create events and issues fetched in other states", async () => {
   startWebhook();
-  await post({ ...move("Agent Queue"), action: "create" });
-  await post(move("In Progress", {}, "KIR-21"));
+  await post({ ...move(), action: "create" });
+  fetchedIssue = { ...queuedIssue(), state: { name: "In Progress" } };
+  await post(move());
   expect(store.listTasks()).toHaveLength(0);
   server.stop(true);
 });
 
-test("a worker:codex label pins the task", async () => {
+test("a worker:codex label on the fetched issue pins the task", async () => {
   startWebhook();
-  await post(move("Agent Queue", { labels: [{ name: "bug" }, { name: "worker:codex" }] }));
+  fetchedIssue = queuedIssue(["bug", "worker:codex"]);
+  await post(move());
   expect(store.listTasks()[0]?.pinned_type).toBe("codex");
   server.stop(true);
 });
 
 test("the /linear route is 404 without a secret", async () => {
   startWebhook(false);
-  expect((await post(move("Agent Queue"))).status).toBe(404);
+  expect((await post(move())).status).toBe(404);
   server.stop(true);
 });
