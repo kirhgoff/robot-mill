@@ -138,7 +138,7 @@ function startWebhook(withSecret = true) {
     checkRepo: async () => {},
     postReview: async () => {},
   });
-  const webhook = withSecret ? createLinearWebhook({ secret, store, tasks, linear: linear(), now: () => now }) : undefined;
+  const webhook = withSecret ? createLinearWebhook({ secret, tasks, linear: linear(), now: () => now }) : undefined;
   server = startServer(0, tasks, undefined, webhook);
 }
 

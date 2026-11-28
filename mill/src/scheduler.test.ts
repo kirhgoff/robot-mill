@@ -8,7 +8,7 @@ function task(fields: Partial<Task>): Task {
   return {
     id: `t${counter}`, kind: "build", parent: null, state: "queued", ticket_id: null, ticket_url: null, title: "", description: "",
     linear_project: null, pinned_type: null, agent_type: null, session: null, repo: null, branch: null, worktree: null,
-    conversation_id: null, pr_url: null, failure: null, created_at: counter, updated_at: counter, ...fields,
+    conversation_id: null, pr_url: null, failure: null, last_prompt_at: null, last_signal_at: null, nudges: 0, reset_at: null, last_activity_at: null, created_at: counter, updated_at: counter, ...fields,
   };
 }
 

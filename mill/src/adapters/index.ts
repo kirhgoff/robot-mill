@@ -1,3 +1,4 @@
+import type { LimitHit } from "../limits";
 import type { AgentType } from "../store";
 import { claude } from "./claude";
 import { codex } from "./codex";
@@ -18,6 +19,7 @@ export type Adapter = {
   launch(ctx: LaunchContext): Launch;
   resume(ctx: LaunchContext): Launch;
   conversationId(turnEndPayload: unknown): string | undefined;
+  detectLimit(paneText: string, now: Date): LimitHit | null;
 };
 
 export const adapters: Record<AgentType, Adapter> = { claude, codex };

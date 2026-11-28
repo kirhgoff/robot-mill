@@ -4,7 +4,7 @@ type Fetch = (url: string, init: { method: string; headers: Record<string, strin
 
 export type LinearConfig = { apiKey: string; team?: string; fetch?: Fetch };
 
-type LinearIssue = { identifier: string; url: string; title: string; description: string; state: string; project: string | null; labels: string[] };
+export type LinearIssue = { identifier: string; url: string; title: string; description: string; state: string; project: string | null; labels: string[] };
 
 type RawIssue = {
   identifier: string;
