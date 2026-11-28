@@ -4,7 +4,7 @@ type Fetch = (url: string, init: { method: string; headers: Record<string, strin
 
 export type LinearConfig = { apiKey: string; team?: string; fetch?: Fetch };
 
-export type QueuedIssue = { identifier: string; title: string; description: string; project: string | null; labels: string[] };
+type QueuedIssue = { identifier: string; title: string; description: string; project: string | null; labels: string[] };
 
 export type LinearTracker = Tracker & { agentQueueIssues(): Promise<QueuedIssue[]> };
 
