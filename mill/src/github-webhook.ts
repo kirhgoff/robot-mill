@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Tasks } from "./tasks";
 
-export const debounceMs = 3 * 60_000;
+const debounceMs = 3 * 60_000;
 
 type Payload = {
   action?: string;
