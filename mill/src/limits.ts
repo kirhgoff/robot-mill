@@ -4,7 +4,7 @@ const hourMs = 3_600_000;
 const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const resetPhrase = /(?:resets|try again at)\s+(.+?)\.?\s*$/i;
 const clock =
-  /^(?:(?<month>[a-z]{3})[a-z]*\.? (?<day>\d{1,2})(?:st|and|rd|th)?,?(?: (?<year>\d{4}))?,? (?:at )?)?(?<hour>\d{1,2})(?::(?<minute>\d{2}))? ?(?<meridiem>[ap]m)(?: \((?<zone>[^)]+)\))?$/i;
+  /^(?:(?<month>[a-z]{3})[a-z]*\.? (?<day>\d{1,2})(?:[a-z]{2})?,?(?: (?<year>\d{4}))?,? (?:at )?)?(?<hour>\d{1,2})(?::(?<minute>\d{2}))? ?(?<meridiem>[ap]m)(?: \((?<zone>[^)]+)\))?$/i;
 
 function partsIn(at: Date, zone?: string) {
   const formatted = new Intl.DateTimeFormat("en-US", {
