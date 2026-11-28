@@ -42,6 +42,10 @@ local all = (fast) {
     ["betterleaks"] {
         check = "betterleaks git --no-banner --redact"
     }
+    ["install-test"] {
+        glob = List("install.sh", "install.test.sh", "mill/mill.env.example")
+        check = "bash install.test.sh"
+    }
     ...packageSteps("mill", true)
 }
 
