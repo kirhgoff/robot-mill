@@ -41,7 +41,7 @@ export function createGithubWebhook({ secret, tasks, botLogin, appLogin, schedul
       schedule(() => {
         pending.delete(prUrl);
         const build = tasks.findOpenPr(prUrl);
-        if (build && !tasks.hasPendingFix(build)) tasks.queueFix(build.id).catch(console.error);
+        if (build && !tasks.hasQueuedFix(build)) tasks.queueFix(build.id).catch(console.error);
       }, debounceMs),
     );
   }

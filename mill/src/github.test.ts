@@ -132,7 +132,21 @@ test("a human comment queues one fix after the debounce and a second comment res
   await comment("kirhgoff");
   liveTimers()[0]?.fn();
   await Promise.resolve();
-  expect(tasks.list().filter((task) => task.kind === "fix")).toHaveLength(1);
+  expect(tasks.list().filter((task) => task.kind === "fix")).toHaveLength(2);
+});
+
+test("a comment during a running fix queues another fix, but not a third while one is queued", async () => {
+  await openPr();
+  await tasks.queueFix("t1");
+  expect(tasks.get("t3")?.state).toBe("running");
+  await comment("kirhgoff");
+  liveTimers()[0]?.fn();
+  await Promise.resolve();
+  expect(tasks.get("t4")).toMatchObject({ kind: "fix", state: "queued" });
+  await comment("kirhgoff");
+  liveTimers()[0]?.fn();
+  await Promise.resolve();
+  expect(tasks.list().filter((task) => task.kind === "fix")).toHaveLength(2);
 });
 
 test("millwright and mill-inspector activity triggers nothing", async () => {

@@ -222,8 +222,8 @@ export function createTasks(deps: TasksDeps) {
     return store.listTasks("pr_open").find((task) => task.kind === "build" && task.pr_url === prUrl);
   }
 
-  function hasPendingFix(build: Task) {
-    return store.listTasks().some((task) => task.kind === "fix" && task.parent === build.id && unfinished.includes(task.state));
+  function hasQueuedFix(build: Task) {
+    return store.listTasks("queued").some((task) => task.kind === "fix" && task.parent === build.id);
   }
 
   async function closePr(build: Task, merged: boolean) {
@@ -291,7 +291,7 @@ export function createTasks(deps: TasksDeps) {
     stop,
     submitReview,
     findOpenPr,
-    hasPendingFix,
+    hasQueuedFix,
     closePr,
     answer,
     ask,
