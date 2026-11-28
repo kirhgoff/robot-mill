@@ -42,7 +42,7 @@ local all = (fast) {
     ["betterleaks"] {
         check = "betterleaks git --no-banner --redact"
     }
-    ...packageSteps("mill", false)
+    ...packageSteps("mill", true)
 }
 
 hooks {
