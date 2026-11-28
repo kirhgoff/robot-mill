@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { adapters } from "./adapters";
 import type { Git } from "./worktree";
 import type { Notifier } from "./notifier";
+import { parsePr } from "./github";
+import type { ReviewInput } from "./github-app";
 import { promptFor } from "./prompts";
 import { nextAssignments, type Slot } from "./scheduler";
 import type { AgentType, Store, Task, TaskState } from "./store";
@@ -21,6 +23,7 @@ export type TasksDeps = {
   baseUrl: () => string;
   hookCommand: string[];
   checkRepo: (repo: string) => Promise<void>;
+  postReview: (prUrl: string, review: ReviewInput) => Promise<void>;
 };
 
 const slotHolding: TaskState[] = ["running", "waiting_answer", "paused_limit"];
@@ -148,7 +151,13 @@ export function createTasks(deps: TasksDeps) {
     if (task.worktree) return task.worktree;
     await deps.checkRepo(repo);
     await git.ensureClone(repo);
-    const branch = task.kind === "review" ? `review-${task.id}` : `${(task.ticket_id ?? task.id).toLowerCase()}-${slugify(task.title)}`;
+    if (task.kind === "review") {
+      const pr = parsePr(task.pr_url ?? "").number;
+      const path = await git.addPrWorktree(repo, pr);
+      store.updateTask(task.id, { repo, branch: `review-${pr}`, worktree: path });
+      return path;
+    }
+    const branch = `${(task.ticket_id ?? task.id).toLowerCase()}-${slugify(task.title)}`;
     const worktree = await git.addWorktree(repo, branch);
     store.updateTask(task.id, { repo, branch, worktree });
     return worktree;
@@ -159,21 +168,73 @@ export function createTasks(deps: TasksDeps) {
       await fail(task, result.failure);
     } else if (task.kind === "build") {
       if (!result.pr_url) throw new Error("pr_url is required to complete a build task");
-      store.updateTask(task.id, { state: "pr_open", pr_url: result.pr_url });
-      store.insertTask({
-        kind: "review",
-        parent: task.id,
-        title: task.title,
-        description: task.description,
-        linear_project: task.linear_project,
-        ticket_id: task.ticket_id,
-        ticket_url: task.ticket_url,
-        pr_url: result.pr_url,
-      });
+      queueReview(store.updateTask(task.id, { state: "pr_open", pr_url: result.pr_url }));
     } else {
       store.updateTask(task.id, { state: "done" });
       if (task.kind === "review") await endReview(task);
+      else await afterFix(task);
     }
+    await tick();
+  }
+
+  function queueReview(build: Task) {
+    store.insertTask({
+      kind: "review",
+      parent: build.id,
+      title: build.title,
+      description: build.description,
+      linear_project: build.linear_project,
+      ticket_id: build.ticket_id,
+      ticket_url: build.ticket_url,
+      pr_url: build.pr_url,
+    });
+  }
+
+  const roundsKey = (prUrl: string) => `review_rounds:${prUrl}`;
+  const findingsKey = (prUrl: string) => `review_findings:${prUrl}`;
+
+  async function afterFix(fix: Task) {
+    const build = parentOf(fix);
+    if (!build?.pr_url) return;
+    const rounds = Number(store.getKv(roundsKey(build.pr_url)) ?? 0);
+    if (rounds < 2 && store.getKv(findingsKey(build.pr_url)) === "1") queueReview(build);
+    else await notifier.send(`${ticketPrefix(build)}PR ready for you: ${build.pr_url}`);
+  }
+
+  async function submitReview(task: Task, review: ReviewInput) {
+    const build = parentOf(task);
+    if (task.kind !== "review" || !build?.pr_url) throw new Error(`task ${task.id} is not a review task`);
+    await deps.postReview(build.pr_url, review);
+    const rounds = Number(store.getKv(roundsKey(build.pr_url)) ?? 0) + 1;
+    const findings = review.event === "REQUEST_CHANGES" || review.comments.length > 0;
+    store.setKv(roundsKey(build.pr_url), String(rounds));
+    store.setKv(findingsKey(build.pr_url), findings ? "1" : "0");
+    store.updateTask(task.id, { state: "done" });
+    await endReview(task);
+    if (findings) await queueFix(build.id);
+    else await notifier.send(`${ticketPrefix(build)}PR ready for you: ${build.pr_url}`);
+    await tick();
+  }
+
+  const unfinished: TaskState[] = ["queued", ...slotHolding];
+
+  function findOpenPr(prUrl: string) {
+    return store.listTasks("pr_open").find((task) => task.kind === "build" && task.pr_url === prUrl);
+  }
+
+  function hasPendingFix(build: Task) {
+    return store.listTasks().some((task) => task.kind === "fix" && task.parent === build.id && unfinished.includes(task.state));
+  }
+
+  async function closePr(build: Task, merged: boolean) {
+    for (const child of store.listTasks().filter((task) => task.parent === build.id && unfinished.includes(task.state))) {
+      store.updateTask(child.id, { state: "canceled" });
+      await endReview(child);
+    }
+    await endReview(build);
+    store.updateTask(build.id, { state: merged ? "done" : "canceled" });
+    if (build.ticket_id) await tracker.move(build.ticket_id, merged ? "Done" : "Canceled");
+    await notifier.send(`${ticketPrefix(build)}${merged ? "merged" : "closed"}: ${build.pr_url}`);
     await tick();
   }
 
@@ -228,6 +289,10 @@ export function createTasks(deps: TasksDeps) {
     prepareWorktree,
     complete,
     stop,
+    submitReview,
+    findOpenPr,
+    hasPendingFix,
+    closePr,
     answer,
     ask,
     message,

@@ -3,7 +3,7 @@ import { dispatcherSession } from "./dispatcher";
 import { createMcpServer } from "./mcp";
 import type { Tasks } from "./tasks";
 
-export function startServer(port: number, tasks: Tasks, onDispatcherTurnEnd: (payload: unknown) => void = () => {}, linearWebhook?: (request: Request) => Promise<Response>) {
+export function startServer(port: number, tasks: Tasks, onDispatcherTurnEnd: (payload: unknown) => void = () => {}, linearWebhook?: (request: Request) => Promise<Response>, githubWebhook?: (request: Request) => Promise<Response>) {
   async function handleMcp(request: Request, session: string) {
     const server = createMcpServer(tasks, session);
     const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
@@ -24,6 +24,7 @@ export function startServer(port: number, tasks: Tasks, onDispatcherTurnEnd: (pa
     async fetch(request) {
       const url = new URL(request.url);
       if (url.pathname === "/linear") return linearWebhook && request.method === "POST" ? linearWebhook(request) : new Response("not found", { status: 404 });
+      if (url.pathname === "/github") return githubWebhook && request.method === "POST" ? githubWebhook(request) : new Response("not found", { status: 404 });
       const session = url.searchParams.get("session");
       if (!session) return new Response("session required", { status: 400 });
       if (url.pathname === "/mcp") return handleMcp(request, session);
