@@ -64,7 +64,8 @@ test("a task goes from submit to pr_open and queues a review on the other type",
   expect(build).toMatchObject({ state: "running", session: "mill-t1" });
   const builderType = build?.agent_type ?? undefined;
   expect(tmux.sessions.get("mill-t1")?.argv[0]).toBe(builderType);
-  expect(tmux.sent.get("mill-t1")?.[0]).toContain("LOCAL-1");
+  expect(tmux.sent.has("mill-t1")).toBe(false);
+  expect(tmux.sessions.get("mill-t1")?.argv.at(-1)).toContain("LOCAL-1");
 
   const worker = await connect("mill-t1");
   const prepared = await call(worker, "prepare_worktree", { repo: "widgets" });
@@ -78,7 +79,7 @@ test("a task goes from submit to pr_open and queues a review on the other type",
   const review = tasks.get("t2");
   expect(review).toMatchObject({ kind: "review", parent: "t1", state: "running" });
   expect(review?.agent_type).not.toBe(builderType);
-  expect(tmux.sent.get("mill-t2")?.[0]).toContain("pull/1");
+  expect(tmux.sessions.get("mill-t2")?.argv.at(-1)).toContain("pull/1");
 });
 
 test("a worker cannot call dispatcher tools", async () => {

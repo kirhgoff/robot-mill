@@ -62,19 +62,6 @@ export function createTasks(deps: TasksDeps) {
     const cwd = join(deps.sessionsDir, task.id);
     mkdirSync(cwd, { recursive: true });
     const conversationId = parent ? parent.conversation_id : type === "claude" ? randomUUID() : null;
-    const base = deps.baseUrl();
-    const ctx = {
-      session,
-      cwd,
-      conversationId,
-      mcpUrl: `${base}/mcp?session=${session}`,
-      hookCommand: [...deps.hookCommand, `${base}/hook/turn-end?session=${session}`],
-    };
-    if (!(await tmux.has(session))) {
-      const adapter = adapters[type];
-      const launch = parent && conversationId ? adapter.resume(ctx) : adapter.launch(ctx);
-      await tmux.start(session, cwd, launch.argv, launch.env);
-    }
     const running = store.updateTask(task.id, {
       state: "running",
       agent_type: type,
@@ -82,7 +69,23 @@ export function createTasks(deps: TasksDeps) {
       conversation_id: conversationId,
       ...(parent && { repo: parent.repo, branch: parent.branch, worktree: parent.worktree }),
     });
-    await tmux.send(session, promptFor(running));
+    const prompt = promptFor(running);
+    if (await tmux.has(session)) {
+      await tmux.send(session, prompt);
+      return;
+    }
+    const base = deps.baseUrl();
+    const ctx = {
+      session,
+      cwd,
+      conversationId,
+      prompt,
+      mcpUrl: `${base}/mcp?session=${session}`,
+      hookCommand: [...deps.hookCommand, `${base}/hook/turn-end?session=${session}`],
+    };
+    const adapter = adapters[type];
+    const launch = parent && conversationId ? adapter.resume(ctx) : adapter.launch(ctx);
+    await tmux.start(session, cwd, launch.argv, launch.env);
   }
 
   async function runTick() {

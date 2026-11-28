@@ -10,7 +10,7 @@ function flags(ctx: LaunchContext) {
 
 export const claude: Adapter = {
   type: "claude",
-  launch: (ctx) => ({ argv: ["claude", "--session-id", ctx.conversationId ?? "", ...flags(ctx)], env: {} }),
-  resume: (ctx) => ({ argv: ["claude", "--resume", ctx.conversationId ?? "", ...flags(ctx)], env: {} }),
+  launch: (ctx) => ({ argv: ["claude", "--session-id", ctx.conversationId ?? "", ...flags(ctx), "--", ctx.prompt], env: {} }),
+  resume: (ctx) => ({ argv: ["claude", "--resume", ctx.conversationId ?? "", ...flags(ctx), "--", ctx.prompt], env: {} }),
   conversationId: (payload) => (payload as { session_id?: string }).session_id,
 };

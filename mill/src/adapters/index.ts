@@ -8,6 +8,7 @@ export type LaunchContext = {
   hookCommand: string[];
   cwd: string;
   conversationId: string | null;
+  prompt: string;
 };
 
 type Launch = { argv: string[]; env: Record<string, string> };

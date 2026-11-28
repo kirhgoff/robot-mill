@@ -12,7 +12,7 @@ function flags(ctx: LaunchContext) {
 
 export const codex: Adapter = {
   type: "codex",
-  launch: (ctx) => ({ argv: ["codex", ...flags(ctx)], env: {} }),
-  resume: (ctx) => ({ argv: ["codex", "resume", ctx.conversationId ?? "", ...flags(ctx)], env: {} }),
+  launch: (ctx) => ({ argv: ["codex", ...flags(ctx), ctx.prompt], env: {} }),
+  resume: (ctx) => ({ argv: ["codex", "resume", ctx.conversationId ?? "", ...flags(ctx), ctx.prompt], env: {} }),
   conversationId: (payload) => (payload as { "thread-id"?: string })["thread-id"],
 };
