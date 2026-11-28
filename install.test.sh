@@ -40,7 +40,7 @@ expect() {
 }
 
 calls_count() { [[ "$(grep -c "$2" "$calls" || true)" == "$1" ]]; }
-file_mode() { [[ "$(stat -f %Lp "$2" 2>/dev/null || stat -c %a "$2")" == "$1" ]]; }
+file_mode() { [[ "$(stat -c %a "$2" 2>/dev/null || stat -f %Lp "$2")" == "$1" ]]; }
 link_points_to() { [[ "$(readlink "$1")" == "$2" ]]; }
 nothing_newer_than() { [[ -z "$(find "$HOME" -newer "$1" -type f)" ]]; }
 lacks() { ! grep -q "$@"; }
