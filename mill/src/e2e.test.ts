@@ -166,3 +166,12 @@ test("a codex thread id arriving during a fix round is used to resume the next f
   await tasks.queueFix("t1");
   expect(tmux.sessions.get("mill-t1")?.argv.slice(0, 3)).toEqual(["codex", "resume", "th-7"]);
 });
+
+test("prepare_worktree refuses repo names that are not plain names", async () => {
+  await tasks.submit({ title: "A", description: "", linear_project: "p" });
+  const worker = await connect("mill-t1");
+  for (const repo of ["kirhgoff/foo", "../x", "..", "."]) {
+    expect((await call(worker, "prepare_worktree", { repo })).isError).toBe(true);
+  }
+  expect(commands).toEqual([]);
+});

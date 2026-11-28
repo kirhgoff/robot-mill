@@ -6,6 +6,10 @@ import type { Tasks } from "./tasks";
 const dispatcherSession = "mill-dispatcher";
 
 const worker = z.enum(["claude", "codex"]);
+const repoName = z
+  .string()
+  .regex(/^[A-Za-z0-9._-]+$/)
+  .refine((name) => name !== "." && name !== "..");
 
 async function respond(work: () => Promise<unknown>): Promise<CallToolResult> {
   try {
@@ -65,7 +69,7 @@ export function createMcpServer(tasks: Tasks, session: string) {
   } else {
     server.registerTool(
       "prepare_worktree",
-      { description: "Clone or fetch the repo and create your worktree; returns its path", inputSchema: { repo: z.string() } },
+      { description: "Clone or fetch the repo and create your worktree; returns its path", inputSchema: { repo: repoName } },
       ({ repo }) =>
         respond(async () => {
           const task = tasks.activeFor(session);
