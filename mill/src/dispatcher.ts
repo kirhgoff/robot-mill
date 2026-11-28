@@ -11,6 +11,7 @@ export const dispatcherSession = "mill-dispatcher";
 
 const contextLimit = 0.6;
 const dailyResetHour = 4;
+const settleMs = 60_000;
 const lastResetKey = "dispatcher_reset_date";
 
 export function readContextUsage(threadId: string, sessionsRoot = join(homedir(), ".codex", "sessions")): number | null {
@@ -50,10 +51,11 @@ export function createDispatcher(deps: DispatcherDeps) {
   let lastSent = 0;
   let lastTurnEnd = 0;
   let warnedUnreadable = false;
+  let resetDue = false;
 
-  const idle = () => lastTurnEnd >= lastSent;
+  const settled = () => lastTurnEnd >= lastSent && now().getTime() - lastTurnEnd >= settleMs;
 
-  async function start() {
+  async function start(firstMessage?: string) {
     const cwd = join(deps.stateDir, "dispatcher");
     mkdirSync(cwd, { recursive: true });
     const base = deps.baseUrl();
@@ -61,7 +63,7 @@ export function createDispatcher(deps: DispatcherDeps) {
       session: dispatcherSession,
       cwd,
       conversationId: null,
-      prompt: dispatcherPrompt,
+      prompt: firstMessage ? `${dispatcherPrompt}\n\n${firstMessage}` : dispatcherPrompt,
       mcpUrl: `${base}/mcp?session=${dispatcherSession}`,
       hookCommand: [...deps.hookCommand, `${base}/hook/turn-end?session=${dispatcherSession}`],
     });
@@ -74,16 +76,21 @@ export function createDispatcher(deps: DispatcherDeps) {
   }
 
   async function reset() {
+    resetDue = false;
     await tmux.kill(dispatcherSession);
     await start();
   }
 
   async function send(text: string) {
+    if (!(await tmux.has(dispatcherSession))) {
+      await start(text);
+      return;
+    }
     lastSent = now().getTime();
     await tmux.send(dispatcherSession, text);
   }
 
-  async function onTurnEnd(payload: unknown) {
+  function onTurnEnd(payload: unknown) {
     lastTurnEnd = now().getTime();
     const threadId = adapters.codex.conversationId(payload);
     if (!threadId) return;
@@ -92,18 +99,19 @@ export function createDispatcher(deps: DispatcherDeps) {
       warnedUnreadable = true;
       console.warn(`dispatcher: cannot read token count for thread ${threadId}`);
     }
-    if (usage !== null && usage > contextLimit) await reset();
+    if (usage !== null && usage > contextLimit) resetDue = true;
   }
 
-  async function checkDaily() {
+  async function tick() {
     const current = now();
     const today = localDate(current);
-    if (current.getHours() < dailyResetHour || store.getKv(lastResetKey) === today || !idle()) return;
+    const dailyDue = current.getHours() >= dailyResetHour && store.getKv(lastResetKey) !== today;
+    if (!(dailyDue || resetDue) || !settled()) return;
     await reset();
-    store.setKv(lastResetKey, today);
+    if (dailyDue) store.setKv(lastResetKey, today);
   }
 
-  return { ensure, reset, send, onTurnEnd, checkDaily };
+  return { ensure, reset, send, onTurnEnd, tick };
 }
 
 export type Dispatcher = ReturnType<typeof createDispatcher>;

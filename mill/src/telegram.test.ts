@@ -70,7 +70,8 @@ test("messages from another chat are dropped without a reply", async () => {
 });
 
 test("a plain message is typed into the dispatcher", async () => {
-  const { bot } = setup();
+  const { bot, dispatcher } = setup();
+  await dispatcher.ensure();
   updates.push(incoming(1, "build a thing"));
   await bot.pollOnce();
   expect(tmux.sent.get(dispatcherSession)).toEqual(["[telegram] build a thing"]);

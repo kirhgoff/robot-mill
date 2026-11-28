@@ -48,41 +48,70 @@ test("daily reset fires once per day, only when idle and after 04:00", async () 
   await dispatcher.onTurnEnd({});
   const first = tmux.sessions.get(dispatcherSession);
 
-  await dispatcher.checkDaily();
+  await dispatcher.tick();
   expect(tmux.sessions.get(dispatcherSession)).toBe(first);
 
   clock = at(4);
   await dispatcher.send("[telegram] busy");
-  await dispatcher.checkDaily();
+  clock = at(4, 1);
+  clock = new Date(clock.getTime() + 120_000);
+  await dispatcher.tick();
   expect(tmux.sessions.get(dispatcherSession)).toBe(first);
 
   clock = at(5);
   await dispatcher.onTurnEnd({});
-  await dispatcher.checkDaily();
+  clock = new Date(clock.getTime() + 60_000);
+  await dispatcher.tick();
   const second = tmux.sessions.get(dispatcherSession);
   expect(second).not.toBe(first);
 
   clock = at(6);
   await dispatcher.onTurnEnd({});
-  await dispatcher.checkDaily();
+  clock = new Date(clock.getTime() + 60_000);
+  await dispatcher.tick();
   expect(tmux.sessions.get(dispatcherSession)).toBe(second);
 
   clock = at(5, 2);
   await dispatcher.onTurnEnd({});
-  await dispatcher.checkDaily();
+  clock = new Date(clock.getTime() + 60_000);
+  await dispatcher.tick();
   expect(tmux.sessions.get(dispatcherSession)).not.toBe(second);
 });
 
-test("a turn above 60% of the context window resets the dispatcher, below does not", async () => {
+test("a high-usage turn only marks a reset, done once the dispatcher has been quiet for 60 s", async () => {
   const dispatcher = build();
   await dispatcher.ensure();
   const first = tmux.sessions.get(dispatcherSession);
   usage = 0.59;
   await dispatcher.onTurnEnd(turnEnd);
+  await dispatcher.tick();
   expect(tmux.sessions.get(dispatcherSession)).toBe(first);
+
   usage = 0.61;
   await dispatcher.onTurnEnd(turnEnd);
+  await dispatcher.tick();
+  expect(tmux.sessions.get(dispatcherSession)).toBe(first);
+
+  clock = new Date(clock.getTime() + 10_000);
+  await dispatcher.send("[telegram] second");
+  clock = new Date(clock.getTime() + 60_000);
+  await dispatcher.tick();
+  expect(tmux.sessions.get(dispatcherSession)).toBe(first);
+
+  usage = 0.1;
+  await dispatcher.onTurnEnd(turnEnd);
+  await dispatcher.tick();
+  expect(tmux.sessions.get(dispatcherSession)).toBe(first);
+  clock = new Date(clock.getTime() + 60_000);
+  await dispatcher.tick();
   expect(tmux.sessions.get(dispatcherSession)).not.toBe(first);
+});
+
+test("send to a missing dispatcher starts it with the message after the role prompt", async () => {
+  const dispatcher = build();
+  await dispatcher.send("[telegram] hello");
+  expect(tmux.sessions.get(dispatcherSession)?.argv.at(-1)).toContain("[telegram] hello");
+  expect(tmux.sent.has(dispatcherSession)).toBe(false);
 });
 
 function rollout(lines: string[]) {

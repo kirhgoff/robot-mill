@@ -44,9 +44,9 @@ function serve() {
   });
   const baseUrl = () => `http://127.0.0.1:${port}`;
   const dispatcher = createDispatcher({ store, tmux, stateDir, baseUrl, hookCommand: [process.execPath, import.meta.path, "hook"] });
-  startServer(port, tasks, (payload) => void dispatcher.onTurnEnd(payload).catch(console.error));
+  startServer(port, tasks, (payload) => dispatcher.onTurnEnd(payload));
   dispatcher.ensure().catch(console.error);
-  setInterval(() => dispatcher.checkDaily().catch(console.error), 60_000);
+  setInterval(() => dispatcher.tick().catch(console.error), 60_000);
   if (telegram) void createBot({ ...telegram, store, tasks, dispatcher }).run();
   console.log(`mill listening on 127.0.0.1:${port}`);
 }
